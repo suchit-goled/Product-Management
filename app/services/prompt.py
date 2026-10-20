@@ -1,1 +1,0 @@
-from services.gemini_service import CATALOG_EXTRACTION_PROMPT as PROMPT

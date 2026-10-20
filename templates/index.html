@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suchit — AI Product Catalog Generator</title>
+
+    <!-- Meta Information -->
+    <meta name="description" content="Suchit is an intelligent multimodal AI product catalog generator powered by Google Gemini, extracting rich specifications, marketing copy, and catalog-ready metadata from product images.">
+    <meta name="author" content="Suchit">
+
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <!-- Favicon / SVG Icon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50%' y='68%' font-size='60' font-weight='800' fill='white' text-anchor='middle' font-family='sans-serif'>S</text></svg>">
+</head>
+<body>
+
+    <!-- ====================================================================
+         HEADER & TOP NAVIGATION
+         ==================================================================== -->
+    <header class="app-header">
+        <div class="app-container">
+            <div class="header-inner">
+                <!-- Brand Wordmark -->
+                <div class="brand-wrapper" title="Suchit Catalog Workspace">
+                    <div class="brand-icon">S</div>
+                    <div class="brand-text">
+                        <span class="brand-name">Suchit</span>
+                        <span class="brand-tagline">Catalog Generator</span>
+                    </div>
+                </div>
+
+                <!-- Navigation Links -->
+                <ul class="nav-links">
+                    <li><a class="nav-link active" data-tab="catalogExplorer">Catalog Explorer</a></li>
+                    <li><a class="nav-link" data-tab="aiStudio">AI Studio</a></li>
+                    <li><a class="nav-link" data-tab="exportCenter">Export Center</a></li>
+                    <li><a class="nav-link" data-tab="settingsSection">Settings</a></li>
+                    <li><a class="nav-link" data-tab="docsSection">API & Docs</a></li>
+                </ul>
+
+                <!-- Right Actions & System Status -->
+                <div class="nav-right">
+                    <div class="system-status-pill" id="headerStatusPill">
+                        <span class="status-dot {% if not api_configured %}warning{% endif %}" id="headerStatusDot"></span>
+                        <span id="headerStatusText">{{ stats.total_products }} Products</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="switchTab('aiStudio')">
+                        <span>+</span> New Product
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ====================================================================
+         MAIN APP CONTENT
+         ==================================================================== -->
+    <main class="main-content">
+        <div class="app-container">
+
+            <!-- Metrics Summary Row -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon-box blue">📦</div>
+                    <div class="metric-data">
+                        <span class="metric-value" id="statTotalProducts">{{ stats.total_products }}</span>
+                        <span class="metric-label">Catalog Products</span>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon-box green">🏷️</div>
+                    <div class="metric-data">
+                        <span class="metric-value" id="statTotalBrands">{{ stats.total_brands }}</span>
+                        <span class="metric-label">Active Brands</span>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon-box amber">📑</div>
+                    <div class="metric-data">
+                        <span class="metric-value" id="statTotalCategories">{{ stats.total_categories }}</span>
+                        <span class="metric-label">Categories</span>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon-box purple">✨</div>
+                    <div class="metric-data">
+                        <span class="metric-value" id="statExportReady">{{ stats.export_ready_count }}</span>
+                        <span class="metric-label">Ready for Export</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================================================================
+                 SECTION 1: CATALOG EXPLORER (DEFAULT VIEW)
+                 ================================================================ -->
+            <section class="content-section active" id="catalogExplorer">
+                <div class="section-header-row">
+                    <div class="section-title-group">
+                        <h2>Product Catalog Directory</h2>
+                        <p>Browse, search, edit, and export your catalog products</p>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;">
+                        <a href="/export/pdf" class="btn btn-secondary btn-sm" title="Download Complete Catalog PDF Book">
+                            📥 Download Catalog PDF
+                        </a>
+                        <button class="btn btn-primary btn-sm" onclick="switchTab('aiStudio')">
+                            ✨ AI Product Ingest
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Toolbar: Search, Filters, View Toggles -->
+                <div class="catalog-toolbar">
+                    <div class="toolbar-filters">
+                        <div class="search-input-wrapper">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            <input type="text" id="catalogSearchInput" class="search-input" placeholder="Search by name, brand, category, tags...">
+                        </div>
+
+                        <select id="categoryFilter" class="filter-select">
+                            <option value="all">All Categories</option>
+                        </select>
+
+                        <select id="brandFilter" class="filter-select">
+                            <option value="all">All Brands</option>
+                        </select>
+
+                        <select id="catalogSortSelect" class="filter-select">
+                            <option value="newest">Newest First</option>
+                            <option value="name_asc">Name (A-Z)</option>
+                            <option value="name_desc">Name (Z-A)</option>
+                            <option value="price_asc">Price (Low to High)</option>
+                            <option value="price_desc">Price (High to Low)</option>
+                        </select>
+                    </div>
+
+                    <div class="toolbar-actions">
+                        <div class="view-toggle">
+                            <button id="viewGridBtn" class="view-toggle-btn active" title="Grid View">
+                                <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zm-8 8A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3z"/></svg>
+                            </button>
+                            <button id="viewTableBtn" class="view-toggle-btn" title="Table View">
+                                <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm15 2h-14a1 1 0 0 0-1 1v2h16V5a1 1 0 0 0-1-1zm1 4H0v3h16V8zm0 4H0v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2z"/></svg>
+                            </button>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" onclick="loadCatalogData()" title="Reload catalog">↻</button>
+                    </div>
+                </div>
+
+                <!-- Products Grid Container -->
+                <div id="productsGrid" class="products-grid">
+                    <!-- Dynamically populated by script.js -->
+                </div>
+
+                <!-- Products Table Wrapper -->
+                <div id="productsTableWrapper" style="display:none;">
+                    <!-- Dynamically populated by script.js -->
+                </div>
+
+                <!-- Empty State -->
+                <div id="catalogEmptyState" class="empty-state-box" style="display:none;">
+                    <div class="empty-state-icon">🔍</div>
+                    <h3>No Catalog Products Found</h3>
+                    <p>No products match your current search and filter criteria. You can clear filters or upload a new product image to generate catalog details.</p>
+                    <button class="btn btn-primary" onclick="switchTab('aiStudio')">
+                        Upload Product Image
+                    </button>
+                </div>
+            </section>
+
+
+            <!-- ================================================================
+                 SECTION 2: AI STUDIO (THE 5-STEP WORKFLOW)
+                 ================================================================ -->
+            <section class="content-section" id="aiStudio">
+                <div class="section-header-row">
+                    <div class="section-title-group">
+                        <h2>Suchit AI Catalog Studio</h2>
+                        <p>Upload a product photograph or packaging image to extract specifications, descriptions, and catalog attributes</p>
+                    </div>
+                </div>
+
+                <!-- Workflow Stepper -->
+                <div class="workflow-stepper">
+                    <div class="step-item active" id="step1Indicator">
+                        <div class="step-circle">1</div>
+                        <span>Upload Image</span>
+                    </div>
+                    <div class="step-divider"></div>
+                    <div class="step-item" id="step2Indicator">
+                        <div class="step-circle">2</div>
+                        <span>Configure & AI Analyze</span>
+                    </div>
+                    <div class="step-divider"></div>
+                    <div class="step-item" id="step3Indicator">
+                        <div class="step-circle">3</div>
+                        <span>Review & Refine</span>
+                    </div>
+                    <div class="step-divider"></div>
+                    <div class="step-item" id="step4Indicator">
+                        <div class="step-circle">4</div>
+                        <span>Saved to Catalog</span>
+                    </div>
+                </div>
+
+                <!-- Step 1: Upload Dropzone Card -->
+                <div id="uploadDropzone" class="dropzone-card">
+                    <input type="file" id="catalogImageInput" class="file-hidden-input" accept="image/png, image/jpeg, image/jpg, image/webp">
+                    <svg class="dropzone-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    <h3 class="dropzone-title">Drag & Drop Product Image Here</h3>
+                    <p class="dropzone-subtitle">Supports PNG, JPG, JPEG, and WEBP up to 16MB. Image will be preprocessed with Pillow and analyzed via Gemini.</p>
+                    <button type="button" class="btn btn-secondary">
+                        Browse From Device
+                    </button>
+                </div>
+
+                <!-- Step 2: Selected Image Preview & Extraction Config -->
+                <div id="uploadPreviewBox" class="upload-preview-box">
+                    <div class="preview-grid">
+                        <div class="preview-image-frame">
+                            <img id="selectedImgPreview" src="" alt="Selected Product Preview">
+                        </div>
+                        <div class="preview-details">
+                            <div class="preview-filename" id="previewFilename">filename.jpg</div>
+                            <div class="preview-meta-chips">
+                                <span class="spec-chip" id="previewFilesize">0 KB</span>
+                                <span class="spec-chip">Pillow Ready</span>
+                                <span class="spec-chip">EXIF Orientation Auto-Correction</span>
+                            </div>
+
+                            <div style="margin-top:1rem;display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+                                <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px;">
+                                    <label for="aiModelSelect" style="font-size:0.8rem;">Gemini Model:</label>
+                                    <select id="aiModelSelect" class="form-control" style="padding:0.45rem 0.75rem;">
+                                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended - Fastest & Accurate)</option>
+                                        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                                        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style="margin-top:1.25rem;display:flex;gap:0.75rem;">
+                                <button type="button" id="startAiAnalysisBtn" class="btn btn-primary">
+                                    ✨ Generate Catalog Content
+                                </button>
+                                <button type="button" id="clearSelectedImageBtn" class="btn btn-secondary">
+                                    Replace Image
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Processing Spinner Card -->
+                <div id="aiProgressCard" class="ai-progress-card">
+                    <div class="ai-spinner"></div>
+                    <h3 style="font-size:1.2rem;font-weight:700;color:#0f172a;">Analyzing Product Image with Gemini</h3>
+                    <div class="progress-bar-bg">
+                        <div id="aiProgressBarFill" class="progress-bar-fill"></div>
+                    </div>
+                    <p id="aiProgressStatus" style="font-size:0.88rem;color:#64748b;">Preprocessing image with Pillow...</p>
+                </div>
+
+                <!-- Step 3: Side-by-Side Review Workspace -->
+                <div id="reviewWorkspace" class="review-workspace">
+                    <!-- Left: Media Inspector -->
+                    <div class="review-media-panel">
+                        <h4 style="font-size:0.95rem;font-weight:700;color:#0f172a;margin-bottom:0.75rem;">Source Image Inspection</h4>
+                        <img id="reviewLargeImage" class="review-large-img" src="" alt="Source Image">
+                        <div id="reviewMediaMeta" style="font-size:0.8rem;color:#64748b;line-height:1.5;background:#f8fafc;padding:0.6rem;border-radius:6px;border:1px solid #e2e8f0;">
+                            <!-- Populated dynamically -->
+                        </div>
+                        <div style="margin-top:1rem;">
+                            <span class="badge badge-verified" style="margin-bottom:0.4rem;">✓ Packaging Text Verified</span>
+                            <span class="badge badge-ai">✨ AI Enriched Marketing Copy</span>
+                        </div>
+                    </div>
+
+                    <!-- Right: Editable Structured Form -->
+                    <div class="review-form-panel">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;border-bottom:1px solid #e2e8f0;padding-bottom:1rem;">
+                            <div>
+                                <h3 style="font-size:1.3rem;font-weight:800;color:#0f172a;">Review & Refine Catalog Details</h3>
+                                <p style="font-size:0.85rem;color:#64748b;">Review AI-generated fields, adjust specifications, and commit to the database.</p>
+                            </div>
+                            <div style="display:flex;gap:0.5rem;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="resetStudioUploadState()">Discard</button>
+                                <button type="button" class="btn btn-success btn-sm" onclick="saveReviewedCatalogItem()">Save to Catalog</button>
+                            </div>
+                        </div>
+
+                        <!-- Basic Attributes -->
+                        <fieldset class="form-fieldset">
+                            <legend class="form-fieldset-legend">1. Core Product Identity</legend>
+                            <div class="form-group">
+                                <label for="reviewProductName">Product Title *</label>
+                                <input type="text" id="reviewProductName" class="form-control" placeholder="e.g. boAt Airdopes True Wireless Earbuds">
+                            </div>
+
+                            <div class="form-grid-2">
+                                <div class="form-group">
+                                    <label for="reviewBrand">Brand Name</label>
+                                    <input type="text" id="reviewBrand" class="form-control" placeholder="e.g. boAt, Apple, Sony">
+                                </div>
+                                <div class="form-group">
+                                    <label for="reviewModel">Model Identifier</label>
+                                    <input type="text" id="reviewModel" class="form-control" placeholder="e.g. Airdopes 131, A2633">
+                                </div>
+                            </div>
+
+                            <div class="form-grid-2">
+                                <div class="form-group">
+                                    <label for="reviewCategory">Product Category</label>
+                                    <input type="text" id="reviewCategory" class="form-control" placeholder="e.g. Electronics & Audio">
+                                </div>
+                                <div class="form-group">
+                                    <label for="reviewPrice">Price (with Currency)</label>
+                                    <input type="text" id="reviewPrice" class="form-control" placeholder="e.g. ₹1,499 or $799">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="reviewDimensions">Physical Dimensions</label>
+                                <input type="text" id="reviewDimensions" class="form-control" placeholder="e.g. 50 x 50 x 25 mm">
+                            </div>
+                        </fieldset>
+
+                        <!-- Descriptions -->
+                        <fieldset class="form-fieldset">
+                            <legend class="form-fieldset-legend">2. Product Descriptions</legend>
+                            <div class="form-group">
+                                <label for="reviewShortDesc">Short Summary (1-2 sentences for card views)</label>
+                                <input type="text" id="reviewShortDesc" class="form-control" placeholder="Crisp summary">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="reviewDesc">Detailed Marketing Description</label>
+                                <textarea id="reviewDesc" class="form-control" placeholder="Comprehensive catalog overview"></textarea>
+                            </div>
+                        </fieldset>
+
+                        <!-- Features Editor -->
+                        <fieldset class="form-fieldset">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+                                <legend class="form-fieldset-legend" style="margin-bottom:0;">3. Key Features</legend>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="addFeatureRow()">+ Add Feature</button>
+                            </div>
+                            <div id="dynamicFeaturesContainer">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </fieldset>
+
+                        <!-- Technical Specs Editor -->
+                        <fieldset class="form-fieldset">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+                                <legend class="form-fieldset-legend" style="margin-bottom:0;">4. Technical Specifications Table</legend>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="addSpecRow()">+ Add Specification</button>
+                            </div>
+                            <div id="dynamicSpecsContainer">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </fieldset>
+
+                        <!-- Commercial Highlights & Selling Points -->
+                        <fieldset class="form-fieldset">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+                                <legend class="form-fieldset-legend" style="margin-bottom:0;">5. Commercial Selling Points (USPs)</legend>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="addUspRow()">+ Add Selling Point</button>
+                            </div>
+                            <div id="dynamicUspContainer">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </fieldset>
+
+                        <!-- SEO & Keywords -->
+                        <fieldset class="form-fieldset">
+                            <legend class="form-fieldset-legend">6. Search & SEO Metadata</legend>
+                            <div class="form-group">
+                                <label for="reviewTags">Search Keywords & Tags (comma-separated)</label>
+                                <input type="text" id="reviewTags" class="form-control" placeholder="earbuds, bluetooth, audio, wireless">
+                            </div>
+
+                            <div class="form-grid-2">
+                                <div class="form-group">
+                                    <label for="reviewSeoTitle">SEO Title</label>
+                                    <input type="text" id="reviewSeoTitle" class="form-control" placeholder="SEO Title">
+                                </div>
+                                <div class="form-group">
+                                    <label for="reviewSeoDesc">SEO Meta Description</label>
+                                    <input type="text" id="reviewSeoDesc" class="form-control" placeholder="SEO Description">
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <!-- Form Action Buttons -->
+                        <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.5rem;">
+                            <button type="button" class="btn btn-secondary" onclick="resetStudioUploadState()">Discard Draft</button>
+                            <button type="button" class="btn btn-success btn-lg" onclick="saveReviewedCatalogItem()">
+                                ✓ Commit to Suchit Catalog
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- ================================================================
+                 SECTION 3: EXPORT CENTER
+                 ================================================================ -->
+            <section class="content-section" id="exportCenter">
+                <div class="section-header-row">
+                    <div class="section-title-group">
+                        <h2>Catalog Export Center</h2>
+                        <p>Generate presentable PDF catalog sheets, spreadsheets, or raw JSON for multi-channel distribution</p>
+                    </div>
+                </div>
+
+                <div class="export-cards-grid">
+                    <!-- PDF Full Catalog -->
+                    <div class="export-box">
+                        <div>
+                            <div class="export-box-header">
+                                <div class="export-icon-box" style="background:#fee2e2;color:#dc2626;">📄</div>
+                                <div>
+                                    <h3>Comprehensive Catalog PDF</h3>
+                                    <p>Typeset multi-page product book with cover page, index summary, high-resolution product photos, and full specifications.</p>
+                                </div>
+                            </div>
+                            <div style="font-size:0.82rem;color:#64748b;margin-bottom:1rem;">
+                                • Professional ReportLab layout with page numbering<br>
+                                • Clean typography and specifications tables<br>
+                                • Branded with Suchit Catalog Header & Footer
+                            </div>
+                        </div>
+                        <a href="/export/pdf" class="btn btn-primary" download>
+                            Download Full PDF Catalog
+                        </a>
+                    </div>
+
+                    <!-- CSV Spreadsheet -->
+                    <div class="export-box">
+                        <div>
+                            <div class="export-box-header">
+                                <div class="export-icon-box" style="background:#dcfce7;color:#16a34a;">📊</div>
+                                <div>
+                                    <h3>Excel & CSV Spreadsheet</h3>
+                                    <p>Full catalog tabular export encoded in UTF-8 with BOM, formatted for immediate import into Excel, Google Sheets, Amazon, or Shopify.</p>
+                                </div>
+                            </div>
+                            <div style="font-size:0.82rem;color:#64748b;margin-bottom:1rem;">
+                                • Preserves currency symbols (₹, $, €)<br>
+                                • All metadata, tags, dimensions, and specs<br>
+                                • Standard RFC 4180 CSV quoting
+                            </div>
+                        </div>
+                        <a href="/export/csv" class="btn btn-success" download>
+                            Download CSV Spreadsheet
+                        </a>
+                    </div>
+
+                    <!-- Structured JSON -->
+                    <div class="export-box">
+                        <div>
+                            <div class="export-box-header">
+                                <div class="export-icon-box" style="background:#e0f2fe;color:#0284c7;">⚙️</div>
+                                <div>
+                                    <h3>Structured JSON Feed</h3>
+                                    <p>Formatted JSON document with top-level catalog metadata and typed arrays, ready for headless CMS or e-commerce API pipelines.</p>
+                                </div>
+                            </div>
+                            <div style="font-size:0.82rem;color:#64748b;margin-bottom:1rem;">
+                                • Complete nested dictionary and list types<br>
+                                • UTF-8 Unicode characters preserved<br>
+                                • API integration compatible
+                            </div>
+                        </div>
+                        <a href="/export/json" class="btn btn-secondary" download>
+                            Download JSON Feed
+                        </a>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- ================================================================
+                 SECTION 4: SETTINGS & API CONFIGURATION
+                 ================================================================ -->
+            <section class="content-section" id="settingsSection">
+                <div class="section-header-row">
+                    <div class="section-title-group">
+                        <h2>Application Settings & AI Configuration</h2>
+                        <p>Configure Google GenAI credentials, verify model connectivity, and monitor database storage</p>
+                    </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;">
+                    <!-- API Configuration Card -->
+                    <div class="table-card" style="padding:1.75rem;">
+                        <h3 style="font-size:1.15rem;font-weight:700;color:#0f172a;margin-bottom:0.75rem;">Google Gemini AI Integration</h3>
+                        <p style="font-size:0.88rem;color:#64748b;margin-bottom:1.25rem;">
+                            Suchit uses Google GenAI SDK with multimodal vision models (<code>gemini-2.5-flash</code>, <code>gemini-2.0-flash</code>) to analyze images.
+                        </p>
+
+                        <div class="form-group">
+                            <label for="settingsApiKeyInput">Gemini API Key</label>
+                            <input type="password" id="settingsApiKeyInput" class="form-control" placeholder="AIzaSy..." value="">
+                            <small style="font-size:0.75rem;color:#64748b;margin-top:0.25rem;">Obtain a free API key from <a href="https://aistudio.google.com" target="_blank" rel="noopener">Google AI Studio</a>.</small>
+                        </div>
+
+                        <div id="apiKeyTestResult" style="display:none;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;font-size:0.85rem;margin-bottom:1rem;"></div>
+
+                        <div style="display:flex;gap:0.75rem;">
+                            <button type="button" id="testApiKeyBtn" class="btn btn-secondary">
+                                🔌 Test Connection
+                            </button>
+                            <button type="button" id="saveSettingsBtn" class="btn btn-primary">
+                                Save & Persist Key
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- System Diagnostics Card -->
+                    <div class="table-card" style="padding:1.75rem;">
+                        <h3 style="font-size:1.15rem;font-weight:700;color:#0f172a;margin-bottom:0.75rem;">System Environment & Storage</h3>
+                        <p style="font-size:0.88rem;color:#64748b;margin-bottom:1.25rem;">Runtime diagnostics and storage pathways.</p>
+
+                        <div style="font-size:0.88rem;line-height:1.7;color:#334155;">
+                            <div><b>Application:</b> Suchit Product Catalog Generator</div>
+                            <div><b>Engine Version:</b> v2.0.0 (Modernized)</div>
+                            <div><b>Database Engine:</b> SQLite 3 with Auto-Migration</div>
+                            <div><b>Image Engine:</b> Pillow 12.3 with EXIF Orientation Correction</div>
+                            <div><b>PDF Engine:</b> ReportLab 5.0.1 Document Generator</div>
+                            <div><b>Media Directory:</b> <code>static/uploads</code></div>
+                        </div>
+
+                        <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid #e2e8f0;">
+                            <a href="/api/health" target="_blank" class="btn btn-secondary btn-sm">
+                                Open /api/health Diagnostics
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- ================================================================
+                 SECTION 5: API DOCUMENTATION & ABOUT
+                 ================================================================ -->
+            <section class="content-section" id="docsSection">
+                <div class="section-header-row">
+                    <div class="section-title-group">
+                        <h2>Suchit Developer API Reference</h2>
+                        <p>RESTful API endpoints available in the Suchit Catalog Engine for integrations</p>
+                    </div>
+                </div>
+
+                <div class="table-card" style="padding:1.75rem;">
+                    <div style="display:flex;flex-direction:column;gap:1.5rem;">
+                        <!-- Endpoint 1 -->
+                        <div style="border-bottom:1px solid #edf2f7;padding-bottom:1rem;">
+                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
+                                <span class="badge badge-category" style="background:#059669;">POST</span>
+                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/upload</code>
+                            </div>
+                            <p style="font-size:0.88rem;color:#64748b;">Upload a product image. Form fields: <code>image</code> (binary), <code>save_immediately</code> ('true'|'false'), <code>model</code>.</p>
+                        </div>
+
+                        <!-- Endpoint 2 -->
+                        <div style="border-bottom:1px solid #edf2f7;padding-bottom:1rem;">
+                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
+                                <span class="badge badge-category" style="background:#2563eb;">GET</span>
+                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/products</code>
+                            </div>
+                            <p style="font-size:0.88rem;color:#64748b;">Fetch all catalog products. Optional query parameters: <code>?search=...&category=...&brand=...&sort=...</code></p>
+                        </div>
+
+                        <!-- Endpoint 3 -->
+                        <div style="border-bottom:1px solid #edf2f7;padding-bottom:1rem;">
+                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
+                                <span class="badge badge-category" style="background:#2563eb;">GET</span>
+                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/product/&lt;id&gt;</code>
+                            </div>
+                            <p style="font-size:0.88rem;color:#64748b;">Retrieve a single product by ID as a structured JSON object.</p>
+                        </div>
+
+                        <!-- Endpoint 4 -->
+                        <div style="border-bottom:1px solid #edf2f7;padding-bottom:1rem;">
+                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
+                                <span class="badge badge-category" style="background:#d97706;">PUT</span>
+                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/product/&lt;id&gt;</code>
+                            </div>
+                            <p style="font-size:0.88rem;color:#64748b;">Update fields for product by ID with JSON body.</p>
+                        </div>
+
+                        <!-- Endpoint 5 -->
+                        <div style="border-bottom:1px solid #edf2f7;padding-bottom:1rem;">
+                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
+                                <span class="badge badge-category" style="background:#dc2626;">DELETE</span>
+                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/product/&lt;id&gt;</code>
+                            </div>
+                            <p style="font-size:0.88rem;color:#64748b;">Delete product from database by ID.</p>
+                        </div>
+
+                        <!-- Endpoint 6 -->
+                        <div>
+                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
+                                <span class="badge badge-category" style="background:#2563eb;">GET</span>
+                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/export/pdf/&lt;id&gt;</code> &bull; <code style="font-size:1rem;font-weight:700;color:#0f172a;">/export/pdf</code>
+                            </div>
+                            <p style="font-size:0.88rem;color:#64748b;">Download single-product or full catalog PDF specification book.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- ====================================================================
+         FOOTER
+         ==================================================================== -->
+    <footer class="app-footer">
+        <div class="app-container">
+            <div class="footer-inner">
+                <div>
+                    <span class="footer-brand-note">Suchit Product Catalog Generator</span> &bull; Intelligent Multimodal Cataloging Engine &bull; v2.0
+                </div>
+                <div>
+                    Crafted for clean catalog ingestion, multimodal AI extraction, and high-fidelity publishing.
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- ====================================================================
+         MODALS
+         ==================================================================== -->
+    
+    <!-- Product Quick-View Modal -->
+    <div id="productViewModal" class="modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 id="productViewModalTitle">Product Details</h3>
+                <button type="button" class="modal-close-btn" onclick="closeProductModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="productViewModalBody">
+                <!-- Dynamically filled -->
+            </div>
+            <div class="modal-footer">
+                <a id="modalPdfDownloadLink" href="#" class="btn btn-secondary btn-sm" download>
+                    Download PDF Spec Sheet
+                </a>
+                <button type="button" class="btn btn-primary btn-sm" onclick="closeProductModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Edit Modal -->
+    <div id="productEditModal" class="modal-overlay">
+        <div class="modal-dialog">
+            <form id="productEditForm" onsubmit="handleUpdateProductSubmit(event)">
+                <div class="modal-header">
+                    <h3>Edit Product Record</h3>
+                    <button type="button" class="modal-close-btn" onclick="closeEditModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editProductId">
+                    <div class="form-group">
+                        <label for="editProductName">Product Name *</label>
+                        <input type="text" id="editProductName" class="form-control" required>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="editBrand">Brand</label>
+                            <input type="text" id="editBrand" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="editModel">Model</label>
+                            <input type="text" id="editModel" class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="editCategory">Category</label>
+                            <input type="text" id="editCategory" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="editPrice">Price</label>
+                            <input type="text" id="editPrice" class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="editDimensions">Dimensions</label>
+                        <input type="text" id="editDimensions" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="editShortDesc">Short Summary</label>
+                        <input type="text" id="editShortDesc" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="editDesc">Full Description</label>
+                        <textarea id="editDesc" class="form-control"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="editFeatures">Features (one per line)</label>
+                        <textarea id="editFeatures" class="form-control" style="min-height:80px;"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="editTags">Tags (comma-separated)</label>
+                        <input type="text" id="editTags" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="productDeleteModal" class="modal-overlay">
+        <div class="modal-dialog" style="max-width:440px;">
+            <div class="modal-header">
+                <h3 style="color:#dc2626;">Confirm Deletion</h3>
+                <button type="button" class="modal-close-btn" onclick="closeDeleteModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <b id="deleteProductName">this product</b> from your catalog?</p>
+                <p style="font-size:0.85rem;color:#64748b;margin-top:0.5rem;">This action cannot be undone and will permanently remove the record from your database.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="closeDeleteModal()">Cancel</button>
+                <button type="button" class="btn btn-danger btn-sm" onclick="executeProductDeletion()">Delete Product</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Application Script -->
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

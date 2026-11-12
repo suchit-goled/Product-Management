@@ -1,13 +1,15 @@
 """
 Comprehensive Test Suite for Suchit Product Catalog Generator
 Tests all REST API endpoints, image processing, AI fallback mechanisms,
-database migrations, and export utilities.
+database migrations, export utilities, authentication, authorization,
+error handling, contact form, checkout, and backups.
 """
 import unittest
 import json
 import io
 import os
 import sys
+import uuid
 from PIL import Image
 
 # Ensure promothon-main is in path
@@ -145,10 +147,7 @@ class SuchitCatalogTestSuite(unittest.TestCase):
 
     def test_08_backward_compatible_update(self):
         """Test PUT with legacy comma-separated string features."""
-        # Create temp product
         temp_id = database.insert_product({"product_name": "Legacy Compat Item", "brand": "Test"})
-        
-        # Legacy update payload (as used in original put_update.py)
         legacy_data = {
             "product_name": "Legacy Compat Item Updated",
             "brand": "Test",
@@ -170,7 +169,6 @@ class SuchitCatalogTestSuite(unittest.TestCase):
         res = self.client.get('/export/csv')
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.mimetype, 'text/csv')
-        # Check UTF-8 BOM prefix b'\xef\xbb\xbf'
         self.assertTrue(res.data.startswith(b'\xef\xbb\xbf'))
         content = res.data.decode('utf-8-sig')
         self.assertIn("Product Name", content)
@@ -230,6 +228,194 @@ class SuchitCatalogTestSuite(unittest.TestCase):
 
         # Cleanup uploaded test item
         database.delete_product(uploaded_id)
+
+    def test_15_api_key_masked_in_health(self):
+        """Test that API keys are strictly masked and never leaked to frontend."""
+        res = self.client.get('/api/health')
+        self.assertEqual(res.status_code, 200)
+        data = res.json
+        gemini_info = data.get("gemini", {})
+        key_masked = gemini_info.get("api_key_masked")
+        self.assertIsNotNone(key_masked)
+        self.assertIn("********", key_masked)
+        raw_key = os.environ.get("GEMINI_API_KEY", "")
+        if len(raw_key) > 10:
+            self.assertNotIn(raw_key, res.data.decode('utf-8'))
+
+    def test_16_custom_404_html_and_json(self):
+        """Test proper 404 responses for both HTML and API JSON requests."""
+        # HTML 404
+        res_html = self.client.get('/nonexistent-page-path-12345')
+        self.assertEqual(res_html.status_code, 404)
+        html_str = res_html.data.decode('utf-8')
+        self.assertIn("404", html_str)
+        self.assertIn("Page Not Found", html_str)
+
+        # JSON 404
+        res_json = self.client.get('/api/nonexistent-endpoint-54321')
+        self.assertEqual(res_json.status_code, 404)
+        self.assertTrue(res_json.is_json)
+        self.assertEqual(res_json.json.get("error"), "Not Found")
+        self.assertIn("not found", res_json.json.get("message", "").lower())
+
+    def test_17_auth_login_logout_and_session(self):
+        """Test authentication login, session inspection, and logout."""
+        # 1. Login with bad credentials
+        bad_res = self.client.post('/api/auth/login', json={"username": "admin", "password": "WrongPassword!"})
+        self.assertEqual(bad_res.status_code, 401)
+
+        # 2. Login with valid seeded admin
+        login_res = self.client.post('/api/auth/login', json={"username": "admin", "password": "Admin@12345"})
+        self.assertEqual(login_res.status_code, 200)
+        self.assertTrue(login_res.json.get("authenticated"))
+        self.assertEqual(login_res.json["user"]["role"], "admin")
+
+        # 3. Check /api/auth/me with active session
+        me_res = self.client.get('/api/auth/me')
+        self.assertEqual(me_res.status_code, 200)
+        self.assertTrue(me_res.json.get("authenticated"))
+        self.assertEqual(me_res.json["user"]["username"], "admin")
+
+        # 4. Logout
+        logout_res = self.client.post('/api/auth/logout')
+        self.assertEqual(logout_res.status_code, 200)
+        self.assertFalse(logout_res.json.get("authenticated"))
+
+        # 5. Check /api/auth/me after logout
+        me_after = self.client.get('/api/auth/me')
+        self.assertEqual(me_after.status_code, 200)
+        self.assertFalse(me_after.json.get("authenticated"))
+
+    def test_18_auth_registration(self):
+        """Test user registration with validation and duplicate prevention."""
+        uname = f"testuser_{uuid.uuid4().hex[:6]}"
+        reg_payload = {
+            "username": uname,
+            "email": f"{uname}@example.com",
+            "password": "StrongPassword123!",
+            "full_name": "Test Tester"
+        }
+        res = self.client.post('/api/auth/register', json=reg_payload)
+        self.assertEqual(res.status_code, 201)
+        self.assertTrue(res.json.get("success"))
+
+        # Duplicate username attempt
+        dup_res = self.client.post('/api/auth/register', json=reg_payload)
+        self.assertEqual(dup_res.status_code, 409)
+
+    def test_19_rbac_authorization_guards(self):
+        """Test role-based access control protecting administrative endpoints."""
+        # Log out any existing session
+        self.client.post('/api/auth/logout')
+
+        # Attempt to access backup API without logging in (should be 401)
+        res = self.client.get('/api/backups')
+        self.assertEqual(res.status_code, 401)
+
+        # Attempt to create backup without logging in (should be 401)
+        res_post = self.client.post('/api/backups/create')
+        self.assertEqual(res_post.status_code, 401)
+
+        # Login as editor (editor is not admin, so backup access should be 403 Forbidden)
+        self.client.post('/api/auth/login', json={"username": "editor", "password": "Editor@12345"})
+        res_forbidden = self.client.get('/api/backups')
+        self.assertEqual(res_forbidden.status_code, 403)
+
+        # Logout editor and login as admin (admin is authorized)
+        self.client.post('/api/auth/logout')
+        self.client.post('/api/auth/login', json={"username": "admin", "password": "Admin@12345"})
+        res_admin = self.client.get('/api/backups')
+        self.assertEqual(res_admin.status_code, 200)
+        self.client.post('/api/auth/logout')
+
+    def test_20_contact_inquiry_submission(self):
+        """Test contact form endpoint validation, sanitization, and DB storage."""
+        # Invalid email
+        bad_contact = {
+            "name": "Jane Doe",
+            "email": "not-an-email",
+            "subject": "Demo",
+            "message": "Hello there"
+        }
+        res_bad = self.client.post('/api/contact', json=bad_contact)
+        self.assertEqual(res_bad.status_code, 400)
+
+        # Valid contact inquiry
+        good_contact = {
+            "name": "Jane Enterprise",
+            "email": "jane@enterprise.com",
+            "subject": "Commercial Licensing",
+            "message": "Interested in deploying Suchit for 25,000 SKUs."
+        }
+        res_good = self.client.post('/api/contact', json=good_contact)
+        self.assertEqual(res_good.status_code, 201)
+        data = res_good.json
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("reference_code", "").startswith("INQ-"))
+
+    def test_21_commercial_checkout_processing(self):
+        """Test checkout / commercial tier licensing workflow."""
+        # Missing fields test
+        res_invalid = self.client.post('/api/checkout/process', json={})
+        self.assertEqual(res_invalid.status_code, 400)
+
+        # Complete test checkout
+        order_payload = {
+            "plan": "pro",
+            "name": "Jane Director",
+            "email": "jane@company.com",
+            "company": "Suchit Partner Corp",
+            "billing_cycle": "annual",
+            "payment_method": "card",
+            "card_number": "4242 4242 4242 4242",
+            "card_exp": "12/28",
+            "card_cvc": "123"
+        }
+        res_order = self.client.post('/api/checkout/process', json=order_payload)
+        self.assertEqual(res_order.status_code, 200)
+        data = res_order.json
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("order_number", "").startswith("SUCHIT-ORD-"))
+        self.assertIsNotNone(data.get("amount"))
+
+    def test_22_backup_creation_and_listing(self):
+        """Test creating and listing database backups with admin credentials."""
+        # Log in as admin
+        self.client.post('/api/auth/login', json={"username": "admin", "password": "Admin@12345"})
+
+        # Create backup
+        create_res = self.client.post('/api/backups/create')
+        self.assertEqual(create_res.status_code, 200)
+        self.assertTrue(create_res.json.get("success"))
+        filename = create_res.json.get("filename", "")
+        self.assertTrue(filename.endswith(".db"))
+
+        # List backups
+        list_res = self.client.get('/api/backups')
+        self.assertEqual(list_res.status_code, 200)
+        backups = list_res.json
+        if isinstance(backups, dict):
+            backups = backups.get("backups", [])
+        self.assertGreaterEqual(len(backups), 1)
+
+        # Clean up session
+        self.client.post('/api/auth/logout')
+
+    def test_23_security_headers_present(self):
+        """Test that HTTP security headers (nosniff, X-Frame-Options, etc.) are injected."""
+        res = self.client.get('/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(res.headers.get("X-Frame-Options"), "SAMEORIGIN")
+        self.assertEqual(res.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin")
+        self.assertIn("Content-Security-Policy", res.headers)
+
+    def test_24_static_image_asset_delivery(self):
+        """Test that generated compressed image assets exist and are served with 200."""
+        res = self.client.get('/static/uploads/suchit_asset_3_boat.jpg')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.mimetype, 'image/jpeg')
+        self.assertGreater(len(res.data), 1000)
 
 
 if __name__ == '__main__':

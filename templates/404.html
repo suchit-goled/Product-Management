@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 — Page Not Found | Suchit Catalog</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50%' y='68%' font-size='60' font-weight='800' fill='white' text-anchor='middle' font-family='sans-serif'>S</text></svg>">
+</head>
+<body style="min-height:100vh;display:flex;flex-direction:column;justify-content:space-between;background:var(--bg-app);">
+
+    <!-- Header -->
+    <header class="app-header">
+        <div class="app-container">
+            <div class="header-inner">
+                <a href="/" class="brand-wrapper" style="text-decoration:none;">
+                    <div class="brand-icon">S</div>
+                    <div class="brand-text">
+                        <span class="brand-name">Suchit</span>
+                        <span class="brand-tagline">Catalog Generator</span>
+                    </div>
+                </a>
+                <div class="nav-right">
+                    <a href="/" class="btn btn-primary btn-sm">Catalog Explorer</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 404 Content -->
+    <main class="main-content" style="display:flex;align-items:center;justify-content:center;padding:3rem 1rem;">
+        <div class="app-container" style="max-width:680px;text-align:center;">
+            <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:var(--radius-lg);padding:3rem 2rem;box-shadow:var(--shadow-md);">
+                
+                <div style="display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;border-radius:50%;background:var(--primary-light);color:var(--primary);margin-bottom:1.5rem;">
+                    <svg width="44" height="44" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+
+                <div style="font-size:3.5rem;font-weight:900;letter-spacing:-0.03em;color:var(--primary);line-height:1;margin-bottom:0.75rem;">
+                    404
+                </div>
+
+                <h1 style="font-size:1.6rem;font-weight:800;color:var(--text-primary);margin-bottom:0.75rem;">
+                    Catalog Page or Resource Not Found
+                </h1>
+
+                <p style="font-size:0.95rem;color:var(--text-muted);line-height:1.6;margin-bottom:2rem;max-width:520px;margin-left:auto;margin-right:auto;">
+                    The product page, document link, or API endpoint you are trying to reach does not exist or has been relocated.
+                    {% if requested_path %}
+                    <br><code style="font-size:0.85rem;background:var(--bg-subtle);padding:0.2rem 0.5rem;border-radius:4px;color:var(--text-secondary);display:inline-block;margin-top:0.5rem;">Path: {{ requested_path }}</code>
+                    {% endif %}
+                </p>
+
+                <!-- Search box to help user find what they need -->
+                <div style="max-width:440px;margin:0 auto 2rem;">
+                    <form action="/" method="GET" style="display:flex;gap:0.5rem;">
+                        <input type="text" name="search" class="form-control" placeholder="Search catalog for products, brands..." style="flex:1;" autofocus>
+                        <button type="submit" class="btn btn-primary" style="flex-shrink:0;">Search</button>
+                    </form>
+                </div>
+
+                <div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:0.75rem;">
+                    <a href="/" class="btn btn-primary">
+                        Return to Catalog Explorer
+                    </a>
+                    <a href="/#contact" class="btn btn-secondary">
+                        Contact Support
+                    </a>
+                </div>
+
+                <div style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border-color);font-size:0.82rem;color:var(--text-light);display:flex;justify-content:center;gap:1.5rem;">
+                    <span>Error Code: HTTP_404_NOT_FOUND</span>
+                    <span>System: Suchit Catalog Engine</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="app-container">
+            <div class="footer-inner" style="justify-content:center;text-align:center;">
+                <span class="footer-brand-note">Suchit Product Catalog Generator &bull; Intelligent Multimodal Cataloging Engine &bull; v2.2.0</span>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>

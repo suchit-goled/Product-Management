@@ -1,10 +1,9 @@
 /**
- * Suchit Product Catalog Generator — Interactive Client Application
- * Handles catalog browsing, multimodal AI workflows, review & refine editor,
- * exports, and settings.
+ * Suchit Product Catalog Generator — Modern Responsive Client Application
+ * Features: Mobile drawer navigation, Auth & RBAC, Safe API key management,
+ * Commercial checkout, Contact support, Google Analytics 4, Backups, and Exports.
  */
 
-// Relative API root for flexibility across ports and reverse proxies
 const API_BASE = "";
 
 // Global Application State
@@ -15,8 +14,11 @@ let appState = {
     brands: [],
     currentView: "grid", // 'grid' | 'table'
     activeTab: "catalogExplorer",
+    currentUser: null,
     currentDraft: null,
-    selectedFile: null
+    selectedFile: null,
+    selectedCheckoutProduct: null,
+    selectedPaymentMethod: "Credit Card"
 };
 
 // ==============================================================================
@@ -24,38 +26,70 @@ let appState = {
 // ==============================================================================
 
 document.addEventListener("DOMContentLoaded", () => {
-    initNavigation();
+    initMobileNavigation();
+    initNavigationTabs();
     initToolbarFilters();
     initDropzone();
-    initSettingsForm();
+    initSettingsAndBackups();
+    checkAuthStatus();
     loadCatalogData();
+    loadBackupsList();
 });
 
 // ==============================================================================
-// NAVIGATION & TABS
+// MOBILE NAVIGATION & DRAWER
 // ==============================================================================
 
-function initNavigation() {
+function initMobileNavigation() {
+    const menuBtn = document.getElementById("mobileMenuBtn");
+    const drawer = document.getElementById("mobileNavDrawer");
+    const backdrop = document.getElementById("mobileNavBackdrop");
+
+    if (menuBtn && drawer && backdrop) {
+        menuBtn.addEventListener("click", () => {
+            drawer.classList.add("open");
+            backdrop.style.display = "block";
+            document.body.style.overflow = "hidden"; // Prevent background scroll
+        });
+    }
+
+    // Close on Escape key
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            closeMobileDrawer();
+            closeAllModals();
+        }
+    });
+}
+
+function closeMobileDrawer() {
+    const drawer = document.getElementById("mobileNavDrawer");
+    const backdrop = document.getElementById("mobileNavBackdrop");
+    if (drawer) drawer.classList.remove("open");
+    if (backdrop) backdrop.style.display = "none";
+    document.body.style.overflow = "";
+}
+
+// ==============================================================================
+// NAVIGATION TABS & SPA ROUTING
+// ==============================================================================
+
+function initNavigationTabs() {
     const navLinks = document.querySelectorAll(".nav-link[data-tab]");
     navLinks.forEach(link => {
         link.addEventListener("click", (e) => {
             e.preventDefault();
             const targetTab = link.getAttribute("data-tab");
             switchTab(targetTab);
+            closeMobileDrawer();
         });
     });
-
-    // Brand click returns to catalog
-    const brand = document.querySelector(".brand-wrapper");
-    if (brand) {
-        brand.addEventListener("click", () => switchTab("catalogExplorer"));
-    }
 }
 
 function switchTab(tabId) {
     appState.activeTab = tabId;
 
-    // Update nav links
+    // Update active nav links across desktop and mobile
     document.querySelectorAll(".nav-link[data-tab]").forEach(link => {
         if (link.getAttribute("data-tab") === tabId) {
             link.classList.add("active");
@@ -73,9 +107,225 @@ function switchTab(tabId) {
         }
     });
 
-    // Refresh data if switching to catalog
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
     if (tabId === "catalogExplorer") {
         loadCatalogData();
+    } else if (tabId === "checkoutSection") {
+        populateCheckoutDropdown();
+    } else if (tabId === "settingsSection") {
+        loadSettingsHealth();
+        loadBackupsList();
+    }
+}
+
+function handleNewProductClick() {
+    if (!canEdit()) {
+        openAuthModal("login");
+        showToast("Please sign in as Editor or Admin to add new products", "warning");
+        return;
+    }
+    switchTab("aiStudio");
+}
+
+// ==============================================================================
+// AUTHENTICATION & ROLE-BASED ACCESS CONTROL (RBAC)
+// ==============================================================================
+
+async function checkAuthStatus() {
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/me`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data.authenticated) {
+                appState.currentUser = data.user;
+            } else {
+                appState.currentUser = null;
+            }
+            renderAuthUI();
+        }
+    } catch (err) {
+        console.error("Auth check error:", err);
+    }
+}
+
+function renderAuthUI() {
+    const headerContainer = document.getElementById("authHeaderContainer");
+    const mobileAuthContainer = document.getElementById("mobileAuthControls");
+
+    if (appState.currentUser) {
+        const u = appState.currentUser;
+        const initial = (u.username || "U")[0].toUpperCase();
+
+        const html = `
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+                <div class="user-account-badge" onclick="confirmLogout()" title="Click to Sign Out">
+                    <div class="user-avatar-circle">${escapeHtml(initial)}</div>
+                    <span style="font-weight:600;">${escapeHtml(u.username)}</span>
+                    <span class="role-pill ${escapeHtml(u.role)}">${escapeHtml(u.role)}</span>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="confirmLogout()" style="padding:0.25rem 0.5rem;font-size:0.75rem;">Exit</button>
+            </div>
+        `;
+        if (headerContainer) headerContainer.innerHTML = html;
+
+        if (mobileAuthContainer) {
+            mobileAuthContainer.innerHTML = `
+                <div style="font-size:0.85rem;margin-bottom:0.75rem;">
+                    Signed in as <b>${escapeHtml(u.username)}</b> <span class="role-pill ${escapeHtml(u.role)}">${escapeHtml(u.role)}</span>
+                </div>
+                <button class="btn btn-secondary btn-sm" style="width:100%;" onclick="confirmLogout()">Sign Out</button>
+            `;
+        }
+    } else {
+        const guestHtml = `
+            <div style="display:flex;gap:0.4rem;">
+                <button class="btn btn-secondary btn-sm" onclick="openAuthModal('login')">Sign In</button>
+                <button class="btn btn-primary btn-sm" onclick="openAuthModal('register')">Register</button>
+            </div>
+        `;
+        if (headerContainer) headerContainer.innerHTML = guestHtml;
+
+        if (mobileAuthContainer) {
+            mobileAuthContainer.innerHTML = `
+                <div style="display:flex;gap:0.5rem;">
+                    <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="openAuthModal('login'); closeMobileDrawer();">Sign In</button>
+                    <button class="btn btn-primary btn-sm" style="flex:1;" onclick="openAuthModal('register'); closeMobileDrawer();">Register</button>
+                </div>
+            `;
+        }
+    }
+}
+
+function canEdit() {
+    if (!appState.currentUser) return false;
+    return appState.currentUser.role === "admin" || appState.currentUser.role === "editor";
+}
+
+function isAdmin() {
+    if (!appState.currentUser) return false;
+    return appState.currentUser.role === "admin";
+}
+
+function openAuthModal(mode = "login") {
+    const modal = document.getElementById("authModal");
+    if (!modal) return;
+    toggleAuthForm(mode);
+    modal.classList.add("active");
+}
+
+function closeAuthModal() {
+    const modal = document.getElementById("authModal");
+    if (modal) modal.classList.remove("active");
+}
+
+function toggleAuthForm(formName) {
+    const loginForm = document.getElementById("loginForm");
+    const regForm = document.getElementById("registerForm");
+    const verifyForm = document.getElementById("verifyEmailForm");
+    const title = document.getElementById("authModalTitle");
+
+    if (loginForm) loginForm.style.display = "none";
+    if (regForm) regForm.style.display = "none";
+    if (verifyForm) verifyForm.style.display = "none";
+
+    if (formName === "login") {
+        if (loginForm) loginForm.style.display = "block";
+        if (title) title.textContent = "Sign In to Suchit";
+    } else if (formName === "register") {
+        if (regForm) regForm.style.display = "block";
+        if (title) title.textContent = "Create an Account";
+    } else if (formName === "verify") {
+        if (verifyForm) verifyForm.style.display = "block";
+        if (title) title.textContent = "Email Verification";
+    }
+}
+
+async function handleLoginSubmit(e) {
+    e.preventDefault();
+    const identifier = document.getElementById("loginIdentifier").value.trim();
+    const password = document.getElementById("loginPassword").value;
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identifier, password })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            appState.currentUser = data.user;
+            renderAuthUI();
+            closeAuthModal();
+            showToast(data.message || "Logged in successfully!", "success");
+            trackAnalyticsEvent("user_login", { username: data.user.username });
+        } else {
+            showToast(data.message || "Login failed", "error");
+        }
+    } catch (err) {
+        showToast("Error connecting to auth service", "error");
+    }
+}
+
+async function handleRegisterSubmit(e) {
+    e.preventDefault();
+    const username = document.getElementById("regUsername").value.trim();
+    const email = document.getElementById("regEmail").value.trim();
+    const password = document.getElementById("regPassword").value;
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, email, password })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            appState.currentUser = { id: data.user_id, username: data.username, email: data.email, role: data.role, is_verified: false };
+            renderAuthUI();
+            showToast(`Account created! Your verification code is ${data.verification_code}`, "info");
+            toggleAuthForm("verify");
+        } else {
+            showToast(data.message || "Registration failed", "error");
+        }
+    } catch (err) {
+        showToast("Error registering account", "error");
+    }
+}
+
+async function handleVerifyEmailSubmit(e) {
+    e.preventDefault();
+    const code = document.getElementById("verifyEmailCode").value.trim();
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/verify-email`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            if (appState.currentUser) appState.currentUser.is_verified = true;
+            renderAuthUI();
+            closeAuthModal();
+            showToast(data.message || "Email verified successfully!", "success");
+        } else {
+            showToast(data.message || "Invalid code", "error");
+        }
+    } catch (err) {
+        showToast("Error verifying email", "error");
+    }
+}
+
+async function confirmLogout() {
+    if (!confirm("Are you sure you want to sign out of Suchit?")) return;
+    try {
+        await fetch(`${API_BASE}/api/auth/logout`, { method: "POST" });
+        appState.currentUser = null;
+        renderAuthUI();
+        showToast("Signed out successfully", "info");
+    } catch (err) {
+        console.error("Logout error:", err);
     }
 }
 
@@ -109,16 +359,15 @@ async function loadCatalogData() {
 }
 
 function updateStatsUI(stats) {
-    document.getElementById("statTotalProducts").textContent = stats.total_products ?? 0;
-    document.getElementById("statTotalBrands").textContent = stats.total_brands ?? 0;
-    document.getElementById("statTotalCategories").textContent = stats.total_categories ?? 0;
-    document.getElementById("statExportReady").textContent = stats.export_ready_count ?? 0;
+    const elProd = document.getElementById("statTotalProducts");
+    const elBrand = document.getElementById("statTotalBrands");
+    const elCat = document.getElementById("statTotalCategories");
+    const elExp = document.getElementById("statExportReady");
 
-    // Header badge
-    const headerPill = document.getElementById("headerStatusText");
-    if (headerPill) {
-        headerPill.textContent = `${stats.total_products} Products in Database`;
-    }
+    if (elProd) elProd.textContent = stats.total_products ?? 0;
+    if (elBrand) elBrand.textContent = stats.total_brands ?? 0;
+    if (elCat) elCat.textContent = stats.total_categories ?? 0;
+    if (elExp) elExp.textContent = stats.export_ready_count ?? 0;
 }
 
 function populateFilterOptions(categories, brands) {
@@ -157,17 +406,14 @@ function initToolbarFilters() {
     const sortSelect = document.getElementById("catalogSortSelect");
 
     if (searchInput) {
-        searchInput.addEventListener("input", debounce(() => applyFilters(), 250));
+        searchInput.addEventListener("input", debounce(() => {
+            applyFilters();
+            trackAnalyticsEvent("catalog_search", { query: searchInput.value });
+        }, 250));
     }
-    if (catSelect) {
-        catSelect.addEventListener("change", () => applyFilters());
-    }
-    if (brandSelect) {
-        brandSelect.addEventListener("change", () => applyFilters());
-    }
-    if (sortSelect) {
-        sortSelect.addEventListener("change", () => applyFilters());
-    }
+    if (catSelect) catSelect.addEventListener("change", applyFilters);
+    if (brandSelect) brandSelect.addEventListener("change", applyFilters);
+    if (sortSelect) sortSelect.addEventListener("change", applyFilters);
 
     // View toggles
     const gridBtn = document.getElementById("viewGridBtn");
@@ -198,7 +444,6 @@ function applyFilters() {
 
     let result = [...appState.products];
 
-    // Search filter
     if (searchVal) {
         result = result.filter(p => {
             const name = (p.product_name || "").toLowerCase();
@@ -213,17 +458,14 @@ function applyFilters() {
         });
     }
 
-    // Category filter
     if (catVal !== "all") {
         result = result.filter(p => p.category === catVal);
     }
 
-    // Brand filter
     if (brandVal !== "all") {
         result = result.filter(p => p.brand === brandVal);
     }
 
-    // Sorting
     result.sort((a, b) => {
         if (sortVal === "name_asc") return (a.product_name || "").localeCompare(b.product_name || "");
         if (sortVal === "name_desc") return (b.product_name || "").localeCompare(a.product_name || "");
@@ -237,7 +479,6 @@ function applyFilters() {
             const pb = parseFloat((b.price || "").replace(/[^0-9.]/g, "")) || 0;
             return pb - pa;
         }
-        // default newest
         return (b.id || 0) - (a.id || 0);
     });
 
@@ -279,13 +520,8 @@ function renderGridView(products, container) {
         const card = document.createElement("div");
         card.className = "product-card";
 
-        const imageSrc = p.image_path || "";
-        const imageHtml = imageSrc
-            ? `<img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(p.product_name)}" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'card-image-placeholder\\'>Image not available</div>';">`
-            : `<div class="card-image-placeholder">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                <span>No Image</span>
-               </div>`;
+        const imageSrc = p.image_path || "/static/uploads/suchit_asset_4_boat.jpg";
+        const imageHtml = `<img src="${escapeHtml(imageSrc)}" loading="lazy" alt="${escapeHtml(p.product_name)}" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'card-image-placeholder\\'>Product Asset Ready</div>';">`;
 
         const isAi = (p.extraction_source || "").toLowerCase().includes("gemini");
         const aiBadge = isAi
@@ -295,6 +531,12 @@ function renderGridView(products, container) {
         const specs = p.specifications || {};
         const specKeys = Object.keys(specs).slice(0, 3);
         const specChips = specKeys.map(k => `<span class="spec-chip"><b>${escapeHtml(k)}:</b> ${escapeHtml(specs[k])}</span>`).join("");
+
+        // Authorization checks for Edit/Delete buttons
+        const editActions = canEdit()
+            ? `<button class="btn btn-secondary btn-sm" onclick="openEditModal(${p.id})">Edit</button>
+               <button class="btn btn-danger btn-sm" onclick="confirmDeleteProduct(${p.id}, '${escapeJs(p.product_name)}')">Delete</button>`
+            : "";
 
         card.innerHTML = `
             <div class="card-image-box">
@@ -316,9 +558,9 @@ function renderGridView(products, container) {
                 </div>
                 <div class="card-footer-actions">
                     <button class="btn btn-secondary btn-sm" onclick="openProductModal(${p.id})">View</button>
-                    <button class="btn btn-secondary btn-sm" onclick="openEditModal(${p.id})">Edit</button>
-                    <a href="/export/pdf/${p.id}" class="btn btn-secondary btn-sm" title="Download PDF Spec Sheet">PDF</a>
-                    <button class="btn btn-danger btn-sm" onclick="confirmDeleteProduct(${p.id}, '${escapeJs(p.product_name)}')">Delete</button>
+                    <button class="btn btn-success btn-sm" onclick="openCheckoutForProductById(${p.id})">Order / License</button>
+                    <a href="/export/pdf/${p.id}" class="btn btn-secondary btn-sm" title="Download PDF Spec Sheet" download>PDF</a>
+                    ${editActions}
                 </div>
             </div>
         `;
@@ -328,10 +570,13 @@ function renderGridView(products, container) {
 
 function renderTableView(products, container) {
     let tbodyHtml = products.map(p => {
-        const imageSrc = p.image_path || "";
-        const imgHtml = imageSrc
-            ? `<img src="${escapeHtml(imageSrc)}" class="table-thumb" alt="${escapeHtml(p.product_name)}">`
-            : `<div class="table-thumb" style="display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:10px;">None</div>`;
+        const imageSrc = p.image_path || "/static/uploads/suchit_asset_4_boat.jpg";
+        const imgHtml = `<img src="${escapeHtml(imageSrc)}" loading="lazy" class="table-thumb" alt="${escapeHtml(p.product_name)}">`;
+
+        const editActions = canEdit()
+            ? `<button class="btn btn-secondary btn-sm" onclick="openEditModal(${p.id})">Edit</button>
+               <button class="btn btn-danger btn-sm" onclick="confirmDeleteProduct(${p.id}, '${escapeJs(p.product_name)}')">Delete</button>`
+            : "";
 
         return `
             <tr>
@@ -345,11 +590,11 @@ function renderTableView(products, container) {
                 <td><span style="font-weight:700;color:#059669;">${escapeHtml(p.price || "—")}</span></td>
                 <td>${escapeHtml(p.dimensions || "—")}</td>
                 <td>
-                    <div style="display:flex;gap:0.4rem;">
+                    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
                         <button class="btn btn-secondary btn-sm" onclick="openProductModal(${p.id})">View</button>
-                        <button class="btn btn-secondary btn-sm" onclick="openEditModal(${p.id})">Edit</button>
-                        <a href="/export/pdf/${p.id}" class="btn btn-secondary btn-sm">PDF</a>
-                        <button class="btn btn-danger btn-sm" onclick="confirmDeleteProduct(${p.id}, '${escapeJs(p.product_name)}')">Delete</button>
+                        <button class="btn btn-success btn-sm" onclick="openCheckoutForProductById(${p.id})">Order</button>
+                        <a href="/export/pdf/${p.id}" class="btn btn-secondary btn-sm" download>PDF</a>
+                        ${editActions}
                     </div>
                 </td>
             </tr>
@@ -381,19 +626,241 @@ function renderTableView(products, container) {
 }
 
 // ==============================================================================
-// AI STUDIO / UPLOAD & WORKFLOW
+// COMMERCIAL CHECKOUT & ORDER
+// ==============================================================================
+
+function populateCheckoutDropdown() {
+    const select = document.getElementById("checkoutProductSelect");
+    if (!select) return;
+
+    select.innerHTML = "";
+    appState.products.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = `${p.product_name} (${p.price || 'N/A'})`;
+        select.appendChild(opt);
+    });
+
+    if (appState.selectedCheckoutProduct) {
+        select.value = appState.selectedCheckoutProduct.id;
+    }
+
+    updateCheckoutProductSummary();
+}
+
+function updateCheckoutProductSummary() {
+    const select = document.getElementById("checkoutProductSelect");
+    if (!select) return;
+
+    const prodId = parseInt(select.value);
+    const prod = appState.products.find(p => p.id === prodId) || appState.products[0];
+    if (!prod) return;
+
+    appState.selectedCheckoutProduct = prod;
+
+    const nameEl = document.getElementById("summaryProductName");
+    const baseEl = document.getElementById("summaryBasePrice");
+    const taxEl = document.getElementById("summaryTaxAmount");
+    const totalEl = document.getElementById("summaryTotalAmount");
+    const thumbImg = document.getElementById("checkoutThumbImg");
+
+    if (nameEl) nameEl.textContent = prod.product_name;
+
+    // Parse price safely
+    const numPrice = parseFloat((prod.price || "1499").replace(/[^0-9.]/g, "")) || 1499;
+    const tax = numPrice * 0.18;
+    const total = numPrice + tax;
+
+    const symbol = (prod.price || "").includes("$") ? "$" : "₹";
+
+    if (baseEl) baseEl.textContent = `${symbol}${numPrice.toFixed(2)}`;
+    if (taxEl) taxEl.textContent = `${symbol}${tax.toFixed(2)}`;
+    if (totalEl) totalEl.textContent = `${symbol}${total.toFixed(2)}`;
+
+    if (thumbImg) {
+        thumbImg.src = prod.image_path || "/static/uploads/suchit_asset_4_boat.jpg";
+    }
+}
+
+function selectPaymentMethod(method, el) {
+    appState.selectedPaymentMethod = method;
+    document.querySelectorAll(".payment-option-card").forEach(c => c.classList.remove("selected"));
+    if (el) el.classList.add("selected");
+
+    const cardFields = document.getElementById("cardPaymentFields");
+    if (cardFields) {
+        cardFields.style.display = method === "Credit Card" ? "block" : "none";
+    }
+}
+
+function fillTestCardDetails() {
+    const num = document.getElementById("checkoutCardNumber");
+    const exp = document.getElementById("checkoutCardExpiry");
+    const cvv = document.getElementById("checkoutCardCvv");
+
+    if (num) num.value = "4242 4242 4242 4242";
+    if (exp) exp.value = "12/28";
+    if (cvv) cvv.value = "123";
+    showToast("Test card details pre-filled!", "info");
+}
+
+async function handleCheckoutSubmit(e) {
+    e.preventDefault();
+    const prod = appState.selectedCheckoutProduct;
+    if (!prod) {
+        showToast("Please select a product to checkout", "warning");
+        return;
+    }
+
+    const name = document.getElementById("checkoutCustomerName").value.trim();
+    const email = document.getElementById("checkoutCustomerEmail").value.trim();
+    const address = document.getElementById("checkoutAddress").value.trim();
+    const totalText = document.getElementById("summaryTotalAmount").textContent;
+
+    const payload = {
+        product_id: prod.id,
+        product_name: prod.product_name,
+        customer_name: name,
+        customer_email: email,
+        billing_address: address,
+        amount: totalText,
+        payment_method: appState.selectedPaymentMethod,
+        card_number: document.getElementById("checkoutCardNumber")?.value || ""
+    };
+
+    const submitBtn = document.getElementById("checkoutSubmitBtn");
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Processing Secure Payment...";
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/checkout/process`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            trackAnalyticsEvent("purchase", { order_number: data.order_number, value: totalText });
+            openOrderConfirmationModal(data, prod);
+            showToast("Payment processed successfully!", "success");
+        } else {
+            showToast(data.message || "Payment authorization failed", "error");
+        }
+    } catch (err) {
+        showToast("Error communicating with payment gateway", "error");
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "🔒 Complete Secure Payment";
+        }
+    }
+}
+
+function openCheckoutForProductById(prodId) {
+    const prod = appState.products.find(p => p.id === prodId);
+    if (prod) {
+        appState.selectedCheckoutProduct = prod;
+    }
+    switchTab("checkoutSection");
+}
+
+function openOrderConfirmationModal(orderData, prod) {
+    const modal = document.getElementById("orderConfirmationModal");
+    const body = document.getElementById("orderConfirmationModalBody");
+    if (!modal || !body) return;
+
+    body.innerHTML = `
+        <div style="text-align:center;margin-bottom:1.25rem;">
+            <div style="font-size:2rem;font-weight:900;color:#059669;margin-bottom:0.25rem;">
+                ${escapeHtml(orderData.amount)}
+            </div>
+            <div style="font-size:0.85rem;color:#64748b;">
+                Order Reference: <b>${escapeHtml(orderData.order_number)}</b>
+            </div>
+        </div>
+
+        <div style="background:#f8fafc;padding:1rem;border-radius:8px;border:1px solid #e2e8f0;font-size:0.88rem;line-height:1.7;margin-bottom:1rem;">
+            <div><b>Item:</b> ${escapeHtml(prod.product_name)}</div>
+            <div><b>Brand:</b> ${escapeHtml(prod.brand)}</div>
+            <div><b>Status:</b> <span class="badge badge-verified">Payment Authorized</span></div>
+            <div><b>Receipt Date:</b> ${escapeHtml(orderData.created_at)}</div>
+        </div>
+        <p style="font-size:0.82rem;color:#64748b;text-align:center;">
+            A confirmation receipt and digital license package has been registered for your catalog order.
+        </p>
+    `;
+    modal.classList.add("active");
+}
+
+function closeOrderModal() {
+    const modal = document.getElementById("orderConfirmationModal");
+    if (modal) modal.classList.remove("active");
+}
+
+// ==============================================================================
+// CONTACT INQUIRIES
+// ==============================================================================
+
+async function handleContactSubmit(e) {
+    e.preventDefault();
+    const name = document.getElementById("contactName").value.trim();
+    const email = document.getElementById("contactEmail").value.trim();
+    const company = document.getElementById("contactCompany").value.trim();
+    const category = document.getElementById("contactCategory").value;
+    const subject = document.getElementById("contactSubject").value.trim();
+    const message = document.getElementById("contactMessage").value.trim();
+
+    const submitBtn = document.getElementById("contactSubmitBtn");
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Sending Inquiry...";
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/contact`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, email, company, category, subject, message })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(data.message || "Inquiry sent successfully!", "success");
+            document.getElementById("contactForm").reset();
+            trackAnalyticsEvent("contact_inquiry_sent", { category });
+        } else {
+            showToast(data.message || "Failed to submit inquiry", "error");
+        }
+    } catch (err) {
+        showToast("Error connecting to server", "error");
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "✉️ Send Inquiry";
+        }
+    }
+}
+
+// ==============================================================================
+// AI STUDIO / UPLOAD WORKFLOW
 // ==============================================================================
 
 function initDropzone() {
     const dropzone = document.getElementById("uploadDropzone");
     const fileInput = document.getElementById("catalogImageInput");
-
     if (!dropzone || !fileInput) return;
 
-    // Click to select
-    dropzone.addEventListener("click", () => fileInput.click());
+    dropzone.addEventListener("click", () => {
+        if (!canEdit()) {
+            openAuthModal("login");
+            showToast("Please sign in as Editor or Admin to upload images", "warning");
+            return;
+        }
+        fileInput.click();
+    });
 
-    // Drag-and-drop
     ['dragenter', 'dragover'].forEach(eventName => {
         dropzone.addEventListener(eventName, (e) => {
             e.preventDefault();
@@ -411,6 +878,10 @@ function initDropzone() {
     });
 
     dropzone.addEventListener("drop", (e) => {
+        if (!canEdit()) {
+            openAuthModal("login");
+            return;
+        }
         const files = e.dataTransfer.files;
         if (files && files.length > 0) {
             handleImageSelection(files[0]);
@@ -423,17 +894,11 @@ function initDropzone() {
         }
     });
 
-    // Reset button
     const clearBtn = document.getElementById("clearSelectedImageBtn");
-    if (clearBtn) {
-        clearBtn.addEventListener("click", resetStudioUploadState);
-    }
+    if (clearBtn) clearBtn.addEventListener("click", resetStudioUploadState);
 
-    // Start Analysis button
     const startBtn = document.getElementById("startAiAnalysisBtn");
-    if (startBtn) {
-        startBtn.addEventListener("click", runAiCatalogExtraction);
-    }
+    if (startBtn) startBtn.addEventListener("click", runAiCatalogExtraction);
 }
 
 function handleImageSelection(file) {
@@ -444,7 +909,6 @@ function handleImageSelection(file) {
 
     appState.selectedFile = file;
 
-    // Show preview box
     const dropzone = document.getElementById("uploadDropzone");
     const previewBox = document.getElementById("uploadPreviewBox");
     const imgPreview = document.getElementById("selectedImgPreview");
@@ -523,7 +987,6 @@ async function runAiCatalogExtraction() {
 
     setWorkflowStep(3);
 
-    // Animated progress stages
     const stages = [
         { pct: "25%", text: "Preprocessing and optimizing image with Pillow..." },
         { pct: "55%", text: "Running Multimodal AI Vision analysis with Gemini..." },
@@ -543,12 +1006,10 @@ async function runAiCatalogExtraction() {
     try {
         const formData = new FormData();
         formData.append("image", appState.selectedFile);
-        formData.append("save_immediately", "false"); // Let user review first!
+        formData.append("save_immediately", "false");
 
         const modelSelect = document.getElementById("aiModelSelect");
-        if (modelSelect) {
-            formData.append("model", modelSelect.value);
-        }
+        if (modelSelect) formData.append("model", modelSelect.value);
 
         const res = await fetch(`${API_BASE}/upload`, {
             method: "POST",
@@ -556,11 +1017,8 @@ async function runAiCatalogExtraction() {
         });
 
         clearInterval(interval);
-
         const data = await res.json();
-        if (!res.ok) {
-            throw new Error(data.error || "Upload failed");
-        }
+        if (!res.ok) throw new Error(data.error || "Upload failed");
 
         if (progressFill) progressFill.style.width = "100%";
         if (progressStatus) progressStatus.textContent = "Catalog details generated successfully!";
@@ -591,11 +1049,8 @@ async function runAiCatalogExtraction() {
 
 function populateReviewWorkspace(draft, imgMeta) {
     const previewImg = document.getElementById("reviewLargeImage");
-    if (previewImg && draft.image_path) {
-        previewImg.src = draft.image_path;
-    }
+    if (previewImg && draft.image_path) previewImg.src = draft.image_path;
 
-    // Media metadata box
     const mediaMeta = document.getElementById("reviewMediaMeta");
     if (mediaMeta && imgMeta) {
         mediaMeta.innerHTML = `
@@ -605,7 +1060,6 @@ function populateReviewWorkspace(draft, imgMeta) {
         `;
     }
 
-    // Form inputs
     document.getElementById("reviewProductName").value = draft.product_name || "";
     document.getElementById("reviewBrand").value = draft.brand || "";
     document.getElementById("reviewModel").value = draft.model || "";
@@ -617,16 +1071,9 @@ function populateReviewWorkspace(draft, imgMeta) {
     document.getElementById("reviewSeoTitle").value = draft.seo_title || "";
     document.getElementById("reviewSeoDesc").value = draft.seo_description || "";
 
-    // Dynamic Features list
     renderDynamicFeaturesList(draft.features || []);
-
-    // Dynamic Specifications list
     renderDynamicSpecsList(draft.specifications || {});
-
-    // Dynamic Selling Points
     renderDynamicSellingPoints(draft.selling_points || []);
-
-    // Tags
     document.getElementById("reviewTags").value = (draft.tags || []).join(", ");
 }
 
@@ -635,7 +1082,7 @@ function renderDynamicFeaturesList(features) {
     if (!container) return;
     container.innerHTML = "";
 
-    features.forEach((feat, idx) => {
+    features.forEach(feat => {
         const row = document.createElement("div");
         row.className = "dynamic-row";
         row.innerHTML = `
@@ -695,7 +1142,7 @@ function renderDynamicSellingPoints(usp) {
     if (!container) return;
     container.innerHTML = "";
 
-    usp.forEach((item) => {
+    usp.forEach(item => {
         const row = document.createElement("div");
         row.className = "dynamic-row";
         row.innerHTML = `
@@ -727,14 +1174,12 @@ async function saveReviewedCatalogItem() {
             return;
         }
 
-        // Collect features
         const features = [];
         document.querySelectorAll("#dynamicFeaturesContainer .feature-input").forEach(inp => {
             const val = inp.value.trim();
             if (val) features.push(val);
         });
 
-        // Collect specs
         const specifications = {};
         document.querySelectorAll("#dynamicSpecsContainer .dynamic-row").forEach(row => {
             const k = row.querySelector(".spec-key-input")?.value.trim();
@@ -742,14 +1187,12 @@ async function saveReviewedCatalogItem() {
             if (k) specifications[k] = v || "";
         });
 
-        // Collect selling points
         const usp = [];
         document.querySelectorAll("#dynamicUspContainer .usp-input").forEach(inp => {
             const val = inp.value.trim();
             if (val) usp.push(val);
         });
 
-        // Collect tags
         const tagsRaw = document.getElementById("reviewTags")?.value || "";
         const tags = tagsRaw.split(",").map(t => t.trim()).filter(Boolean);
 
@@ -780,9 +1223,7 @@ async function saveReviewedCatalogItem() {
         });
 
         const data = await res.json();
-        if (!res.ok) {
-            throw new Error(data.error || "Failed to save product");
-        }
+        if (!res.ok) throw new Error(data.error || "Failed to save product");
 
         setWorkflowStep(4);
         showToast("Product saved successfully to catalog!", "success");
@@ -796,7 +1237,7 @@ async function saveReviewedCatalogItem() {
 }
 
 // ==============================================================================
-// PRODUCT DETAILS QUICK-VIEW MODAL
+// PRODUCT DETAILS MODAL & QUICK-VIEW
 // ==============================================================================
 
 async function openProductModal(productId) {
@@ -804,6 +1245,7 @@ async function openProductModal(productId) {
         const res = await fetch(`${API_BASE}/product/${productId}`);
         if (!res.ok) throw new Error("Product not found");
         const p = await res.json();
+        appState.selectedCheckoutProduct = p;
 
         const modal = document.getElementById("productViewModal");
         const body = document.getElementById("productViewModalBody");
@@ -813,10 +1255,8 @@ async function openProductModal(productId) {
         if (title) title.textContent = p.product_name;
         if (pdfLink) pdfLink.href = `/export/pdf/${p.id}`;
 
-        const imageSrc = p.image_path || "";
-        const imgHtml = imageSrc
-            ? `<img src="${escapeHtml(imageSrc)}" style="max-height:300px;width:100%;object-fit:contain;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;margin-bottom:1rem;">`
-            : "";
+        const imageSrc = p.image_path || "/static/uploads/suchit_asset_4_boat.jpg";
+        const imgHtml = `<img src="${escapeHtml(imageSrc)}" style="max-height:280px;width:100%;object-fit:contain;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;margin-bottom:1rem;">`;
 
         const specs = p.specifications || {};
         const specRows = Object.entries(specs).map(([k, v]) => `
@@ -836,7 +1276,7 @@ async function openProductModal(productId) {
 
         body.innerHTML = `
             ${imgHtml}
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
                 <div>
                     <span class="badge badge-category">${escapeHtml(p.category)}</span>
                     <span style="font-size:0.85rem;color:#64748b;margin-left:0.5rem;">Brand: <b>${escapeHtml(p.brand)}</b></span>
@@ -845,22 +1285,19 @@ async function openProductModal(productId) {
             </div>
 
             ${p.short_description ? `<div style="background:#f8fafc;padding:0.75rem 1rem;border-left:3px solid #2563eb;border-radius:4px;font-style:italic;margin-bottom:1rem;">${escapeHtml(p.short_description)}</div>` : ''}
-
             ${p.description ? `<div style="font-size:0.92rem;line-height:1.6;margin-bottom:1.25rem;color:#334155;">${escapeHtml(p.description)}</div>` : ''}
-
             ${uspList ? `<div style="margin-bottom:1.25rem;"><b>Selling Highlights:</b><div style="margin-top:0.4rem;">${uspList}</div></div>` : ''}
-
             ${featuresList ? `<div style="margin-bottom:1.25rem;"><b>Key Features:</b><ul style="padding-left:1.2rem;margin-top:0.4rem;font-size:0.9rem;color:#334155;">${featuresList}</ul></div>` : ''}
-
             ${specRows ? `<div style="margin-bottom:1.25rem;"><b>Technical Specifications:</b><table style="width:100%;border-collapse:collapse;margin-top:0.5rem;font-size:0.88rem;"><tbody>${specRows}</tbody></table></div>` : ''}
 
-            <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:0.75rem;">
+            <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:0.75rem;flex-wrap:wrap;">
                 <div>Dimensions: ${escapeHtml(p.dimensions || 'N/A')}</div>
-                <div>ID: #${p.id} • Created: ${escapeHtml(p.created_at || 'N/A')}</div>
+                <div>ID: #${p.id}</div>
             </div>
         `;
 
         modal.classList.add("active");
+        trackAnalyticsEvent("view_product_modal", { product_id: p.id, product_name: p.product_name });
     } catch (err) {
         showToast("Failed to load product details", "error");
     }
@@ -871,11 +1308,22 @@ function closeProductModal() {
     if (modal) modal.classList.remove("active");
 }
 
+function openCheckoutForProduct() {
+    closeProductModal();
+    switchTab("checkoutSection");
+}
+
 // ==============================================================================
-// PRODUCT EDIT MODAL
+// EDIT & DELETE MODALS
 // ==============================================================================
 
 async function openEditModal(productId) {
+    if (!canEdit()) {
+        openAuthModal("login");
+        showToast("Admin or Editor privileges required to edit products", "warning");
+        return;
+    }
+
     try {
         const res = await fetch(`${API_BASE}/product/${productId}`);
         if (!res.ok) throw new Error("Product not found");
@@ -947,13 +1395,15 @@ async function handleUpdateProductSubmit(e) {
     }
 }
 
-// ==============================================================================
-// PRODUCT DELETE CONFIRMATION
-// ==============================================================================
-
 let pendingDeleteId = null;
 
 function confirmDeleteProduct(id, name) {
+    if (!canEdit()) {
+        openAuthModal("login");
+        showToast("Admin or Editor privileges required to delete items", "warning");
+        return;
+    }
+
     pendingDeleteId = id;
     const nameEl = document.getElementById("deleteProductName");
     if (nameEl) nameEl.textContent = name;
@@ -972,10 +1422,7 @@ async function executeProductDeletion() {
     if (!pendingDeleteId) return;
 
     try {
-        const res = await fetch(`${API_BASE}/product/${pendingDeleteId}`, {
-            method: "DELETE"
-        });
-
+        const res = await fetch(`${API_BASE}/product/${pendingDeleteId}`, { method: "DELETE" });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Delete failed");
 
@@ -988,19 +1435,33 @@ async function executeProductDeletion() {
 }
 
 // ==============================================================================
-// SETTINGS & API KEY MANAGEMENT
+// SETTINGS, API KEY PROTECTION & DATABASE BACKUPS
 // ==============================================================================
 
-function initSettingsForm() {
+function initSettingsAndBackups() {
     const testBtn = document.getElementById("testApiKeyBtn");
     const saveBtn = document.getElementById("saveSettingsBtn");
 
-    if (testBtn) {
-        testBtn.addEventListener("click", runApiKeyTest);
-    }
+    if (testBtn) testBtn.addEventListener("click", runApiKeyTest);
+    if (saveBtn) saveBtn.addEventListener("click", runSaveApiKey);
+}
 
-    if (saveBtn) {
-        saveBtn.addEventListener("click", runSaveSettings);
+async function loadSettingsHealth() {
+    try {
+        const res = await fetch(`${API_BASE}/api/health`);
+        if (res.ok) {
+            const h = await res.json();
+            const display = document.getElementById("apiKeyMaskedDisplay");
+            if (display) {
+                if (h.ai_engine?.gemini_api_key_configured) {
+                    display.innerHTML = `<span style="color:#059669;font-weight:600;">✓ Configured & Encrypted: ${escapeHtml(h.ai_engine.masked_key || 'AIzaSy...****')}</span>`;
+                } else {
+                    display.innerHTML = `<span style="color:#d97706;font-weight:600;">⚠️ Not Configured (Using Offline Heuristics Fallback)</span>`;
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Health load error:", err);
     }
 }
 
@@ -1031,12 +1492,18 @@ async function runApiKeyTest() {
         }
     } catch (err) {
         if (resultBox) {
-            resultBox.innerHTML = `<span style="color:#dc2626;">Error testing connection: ${escapeHtml(err.message)}</span>`;
+            resultBox.innerHTML = `<span style="color:#dc2626;">Error: ${escapeHtml(err.message)}</span>`;
         }
     }
 }
 
-async function runSaveSettings() {
+async function runSaveApiKey() {
+    if (!isAdmin()) {
+        openAuthModal("login");
+        showToast("Administrator privileges required to update API keys", "warning");
+        return;
+    }
+
     const keyInput = document.getElementById("settingsApiKeyInput");
     const key = keyInput ? keyInput.value.trim() : "";
 
@@ -1048,31 +1515,183 @@ async function runSaveSettings() {
         });
 
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Save failed");
+        if (!res.ok) throw new Error(data.message || "Save failed");
 
-        showToast("Settings updated and persisted!", "success");
+        showToast("Gemini API key updated and encrypted!", "success");
+        loadSettingsHealth();
+        if (keyInput) keyInput.value = "";
+    } catch (err) {
+        showToast(`Error saving key: ${err.message}`, "error");
+    }
+}
 
-        // Update system health indicator
-        const healthRes = await fetch(`${API_BASE}/api/health`);
-        if (healthRes.ok) {
-            const h = await healthRes.json();
-            const dot = document.getElementById("headerStatusDot");
-            if (dot) {
-                if (h.ai_engine?.gemini_api_key_configured) {
-                    dot.classList.remove("warning");
-                } else {
-                    dot.classList.add("warning");
-                }
-            }
+async function saveAnalyticsSettings() {
+    if (!isAdmin()) {
+        openAuthModal("login");
+        showToast("Administrator privileges required", "warning");
+        return;
+    }
+
+    const gaId = document.getElementById("settingsGaIdInput")?.value.trim() || "";
+    try {
+        const res = await fetch(`${API_BASE}/api/settings/analytics`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ google_analytics_id: gaId })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast("Google Analytics configuration saved!", "success");
+        } else {
+            showToast(data.message || "Save failed", "error");
         }
     } catch (err) {
-        showToast(`Error saving settings: ${err.message}`, "error");
+        showToast("Error updating analytics", "error");
+    }
+}
+
+async function saveDomainEmailSettings() {
+    if (!isAdmin()) {
+        openAuthModal("login");
+        showToast("Administrator privileges required", "warning");
+        return;
+    }
+
+    const domainEmail = document.getElementById("settingsDomainEmailInput")?.value.trim() || "";
+    const mailServer = document.getElementById("settingsMailServerInput")?.value.trim() || "";
+    const mailPort = document.getElementById("settingsMailPortInput")?.value.trim() || "587";
+
+    try {
+        const res = await fetch(`${API_BASE}/api/settings/email`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ domain_email: domainEmail, mail_server: mailServer, mail_port: mailPort })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast("Domain email configuration updated!", "success");
+        } else {
+            showToast(data.message || "Save failed", "error");
+        }
+    } catch (err) {
+        showToast("Error updating email settings", "error");
+    }
+}
+
+async function loadBackupsList() {
+    const container = document.getElementById("backupsListContainer");
+    if (!container) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/api/backups`);
+        if (!res.ok) {
+            container.innerHTML = `<div style="padding:0.75rem;color:#64748b;font-size:0.85rem;text-align:center;">Sign in as Admin to manage backups</div>`;
+            return;
+        }
+
+        const backups = await res.json();
+        if (backups.length === 0) {
+            container.innerHTML = `<div style="padding:0.75rem;color:#64748b;font-size:0.85rem;text-align:center;">No snapshots yet. Click "Create Backup Now".</div>`;
+            return;
+        }
+
+        let html = `<table style="width:100%;border-collapse:collapse;font-size:0.82rem;"><tbody>`;
+        backups.forEach(b => {
+            html += `
+                <tr style="border-bottom:1px solid #e2e8f0;">
+                    <td style="padding:0.5rem 0.65rem;"><b>${escapeHtml(b.filename)}</b><br><span style="color:#64748b;">${escapeHtml(b.created_at)} • ${escapeHtml(b.size_formatted)} (${b.product_count} items)</span></td>
+                    <td style="padding:0.5rem 0.65rem;text-align:right;white-space:nowrap;">
+                        <a href="/api/backups/download/${encodeURIComponent(b.filename)}" class="btn btn-secondary btn-sm" style="padding:0.2rem 0.5rem;font-size:0.75rem;" download>Download</a>
+                        <button class="btn btn-danger btn-sm" style="padding:0.2rem 0.5rem;font-size:0.75rem;margin-left:0.25rem;" onclick="triggerRestoreBackup('${escapeJs(b.filename)}')">Restore</button>
+                    </td>
+                </tr>
+            `;
+        });
+        html += `</tbody></table>`;
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = `<div style="padding:0.75rem;color:#dc2626;font-size:0.85rem;">Error loading backups</div>`;
+    }
+}
+
+async function triggerCreateBackup() {
+    if (!isAdmin()) {
+        openAuthModal("login");
+        showToast("Administrator privileges required to create database backups", "warning");
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/backups/create`, { method: "POST" });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast("Database snapshot created successfully!", "success");
+            loadBackupsList();
+        } else {
+            showToast(data.message || "Backup failed", "error");
+        }
+    } catch (err) {
+        showToast("Error creating backup", "error");
+    }
+}
+
+async function triggerRestoreBackup(filename) {
+    if (!isAdmin()) {
+        openAuthModal("login");
+        showToast("Administrator privileges required", "warning");
+        return;
+    }
+
+    if (!confirm(`CAUTION: Restoring from snapshot '${filename}' will roll back current catalog data. A pre-restore safety snapshot will be created automatically. Proceed?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/backups/restore/${encodeURIComponent(filename)}`, { method: "POST" });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast("Database successfully restored!", "success");
+            loadCatalogData();
+            loadBackupsList();
+        } else {
+            showToast(data.message || "Restore failed", "error");
+        }
+    } catch (err) {
+        showToast("Error during restore operation", "error");
     }
 }
 
 // ==============================================================================
-// UTILITIES
+// SECURITY PADLOCK MODAL
 // ==============================================================================
+
+function openSecurityModal() {
+    const modal = document.getElementById("securityModal");
+    if (modal) modal.classList.add("active");
+}
+
+function closeSecurityModal() {
+    const modal = document.getElementById("securityModal");
+    if (modal) modal.classList.remove("active");
+}
+
+function closeAllModals() {
+    document.querySelectorAll(".modal-overlay").forEach(m => m.classList.remove("active"));
+}
+
+// ==============================================================================
+// UTILITIES & ANALYTICS
+// ==============================================================================
+
+function trackAnalyticsEvent(eventName, params = {}) {
+    if (typeof window.gtag === "function") {
+        try {
+            window.gtag("event", eventName, params);
+        } catch (e) {
+            console.debug("GA4 event tracked:", eventName, params);
+        }
+    }
+}
 
 function showToast(message, type = "info") {
     const container = document.getElementById("toastContainer");
@@ -1095,7 +1714,7 @@ function showToast(message, type = "info") {
 
     setTimeout(() => {
         toast.style.opacity = "0";
-        toast.style.transform = "translateX(100%)";
+        toast.style.transform = "translateX(-100%)";
         toast.style.transition = "all 0.3s ease";
         setTimeout(() => toast.remove(), 300);
     }, 4500);

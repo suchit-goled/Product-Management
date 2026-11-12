@@ -25,3 +25,10 @@ ENV/
 # OS
 Thumbs.db
 .DS_Store
+
+# Test artifacts
+*sample_widget*
+
+# Backups
+backups/*.db
+!backups/.gitkeep

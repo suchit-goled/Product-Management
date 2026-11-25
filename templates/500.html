@@ -9,7 +9,6 @@
 </head>
 <body style="min-height:100vh;display:flex;flex-direction:column;justify-content:space-between;background:var(--bg-app);">
 
-    <!-- Header -->
     <header class="app-header">
         <div class="app-container">
             <div class="header-inner">
@@ -27,11 +26,9 @@
         </div>
     </header>
 
-    <!-- 500 Content -->
     <main class="main-content" style="display:flex;align-items:center;justify-content:center;padding:3rem 1rem;">
         <div class="app-container" style="max-width:680px;text-align:center;">
             <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:var(--radius-lg);padding:3rem 2rem;box-shadow:var(--shadow-md);">
-                
                 <div style="display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;border-radius:50%;background:var(--danger-light);color:var(--danger);margin-bottom:1.5rem;">
                     <svg width="44" height="44" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
@@ -47,34 +44,29 @@
                 </h1>
 
                 <p style="font-size:0.95rem;color:var(--text-muted);line-height:1.6;margin-bottom:2rem;max-width:520px;margin-left:auto;margin-right:auto;">
-                    The server encountered an unexpected situation while processing your catalog request. An incident log has been generated for investigation.
-                    {% if error_details %}
-                    <br><code style="font-size:0.85rem;background:var(--bg-subtle);padding:0.2rem 0.5rem;border-radius:4px;color:var(--danger);display:inline-block;margin-top:0.5rem;">{{ error_details }}</code>
+                    The server encountered an unexpected issue while processing your request. Technical details have been recorded securely server-side without exposing internal data.
+                    {% if incident_id %}
+                    <br><code style="font-size:0.85rem;background:var(--bg-subtle);padding:0.2rem 0.5rem;border-radius:4px;color:var(--danger);display:inline-block;margin-top:0.5rem;">Incident Reference: {{ incident_id }}</code>
                     {% endif %}
                 </p>
 
                 <div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:0.75rem;">
-                    <a href="/" class="btn btn-primary">
-                        Return to Catalog Workspace
-                    </a>
-                    <button onclick="window.location.reload()" class="btn btn-secondary">
-                        Retry Request
-                    </button>
+                    <a href="/" class="btn btn-primary">Return to Catalog Workspace</a>
+                    <a href="/#contactSection" class="btn btn-secondary">Contact Support</a>
                 </div>
 
-                <div style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border-color);font-size:0.82rem;color:var(--text-light);display:flex;justify-content:center;gap:1.5rem;">
+                <div style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--border-color);font-size:0.82rem;color:var(--text-light);display:flex;justify-content:center;gap:1.5rem;flex-wrap:wrap;">
                     <span>Error Code: HTTP_500_INTERNAL_SERVER_ERROR</span>
-                    <span>Status: Auto-Logged</span>
+                    <span>Status: Logged Server-Side</span>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- Footer -->
     <footer class="app-footer">
         <div class="app-container">
             <div class="footer-inner" style="justify-content:center;text-align:center;">
-                <span class="footer-brand-note">Suchit Product Catalog Generator &bull; Intelligent Multimodal Cataloging Engine &bull; v2.2.0</span>
+                <span class="footer-brand-note">Suchit Product Catalog Generator &bull; Intelligent Multimodal Cataloging Engine &bull; v2.3.0</span>
             </div>
         </div>
     </footer>

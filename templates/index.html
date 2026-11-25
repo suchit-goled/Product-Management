@@ -3,31 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>Suchit — AI Product Catalog Generator</title>
 
-    <!-- Meta Information & SEO -->
-    <meta name="description" content="Suchit is an intelligent multimodal AI product catalog generator powered by Google Gemini, extracting rich specifications, marketing copy, and catalog-ready metadata from product images.">
+    <meta name="description" content="Suchit is an intelligent multimodal AI product catalog generator delivering rich specifications, commercial licensing, and multi-channel catalog exports.">
     <meta name="author" content="Suchit">
     <meta name="theme-color" content="#2563eb">
 
-    <!-- Stylesheet -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    
-    <!-- Favicon / SVG Icon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50%' y='68%' font-size='60' font-weight='800' fill='white' text-anchor='middle' font-family='sans-serif'>S</text></svg>">
-
-    {% if google_analytics_id %}
-    <!-- Google Analytics 4 (GA4) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id={{ google_analytics_id }}"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
-        gtag('js', new Date());
-        gtag('config', '{{ google_analytics_id }}');
-    </script>
-    {% endif %}
 </head>
-<body>
+<body data-authenticated="{{ 'true' if current_user else 'false' }}"
+      data-role="{{ current_user.role if current_user else 'guest' }}"
+      data-ga-id="{{ google_analytics_id }}">
 
     <!-- ====================================================================
          HEADER & TOP NAVIGATION (DESKTOP & MOBILE)
@@ -35,13 +23,11 @@
     <header class="app-header">
         <div class="app-container">
             <div class="header-inner">
-                <!-- Mobile Hamburger Toggle -->
                 <button type="button" class="mobile-menu-toggle" id="mobileMenuBtn" aria-label="Open Navigation Menu">
                     ☰
                 </button>
 
-                <!-- Brand Wordmark -->
-                <div class="brand-wrapper" title="Suchit Catalog Workspace" onclick="switchTab('catalogExplorer')">
+                <div class="brand-wrapper" title="Suchit Catalog Workspace" data-tab="catalogExplorer">
                     <div class="brand-icon">S</div>
                     <div class="brand-text">
                         <span class="brand-name">Suchit</span>
@@ -49,77 +35,89 @@
                     </div>
                 </div>
 
-                <!-- Desktop Navigation Links -->
+                <!-- Role-Aware Desktop Navigation (No internal APIs exposed) -->
                 <ul class="nav-links">
-                    <li><a class="nav-link active" data-tab="catalogExplorer">Catalog Explorer</a></li>
-                    <li><a class="nav-link" data-tab="aiStudio">AI Studio</a></li>
-                    <li><a class="nav-link" data-tab="checkoutSection">Order / Checkout</a></li>
-                    <li><a class="nav-link" data-tab="contactSection">Contact Support</a></li>
-                    <li><a class="nav-link" data-tab="exportCenter">Export Center</a></li>
-                    <li><a class="nav-link" data-tab="settingsSection">Settings</a></li>
-                    <li><a class="nav-link" data-tab="docsSection">API & Docs</a></li>
+                    <li><a class="nav-link active" href="#catalogExplorer" data-tab="catalogExplorer">Catalog Explorer</a></li>
+                    {% if current_user and current_user.role in ('admin', 'editor') %}
+                    <li><a class="nav-link" href="#aiStudio" data-tab="aiStudio">AI Studio</a></li>
+                    {% endif %}
+                    <li><a class="nav-link" href="#checkoutSection" data-tab="checkoutSection">Order / Checkout</a></li>
+                    <li><a class="nav-link" href="#contactSection" data-tab="contactSection">Contact Support</a></li>
+                    <li><a class="nav-link" href="#exportCenter" data-tab="exportCenter">Export Center</a></li>
+                    {% if current_user and current_user.role == 'admin' %}
+                    <li><a class="nav-link" href="#settingsSection" data-tab="settingsSection">Admin Console</a></li>
+                    {% endif %}
                 </ul>
 
-                <!-- Right Actions & Security/Auth State -->
                 <div class="nav-right">
-                    <!-- SSL Padlock Security Badge -->
-                    <div class="system-status-pill" id="securityPadlockPill" onclick="openSecurityModal()" title="View SSL/TLS & Security Diagnostics">
+                    <div class="system-status-pill" id="securityPadlockPill" data-action="open-security" title="View SSL/TLS & Security Diagnostics">
+                        <span class="status-dot"></span>
                         <span>🔒</span>
-                        <span>SSL 256-Bit</span>
+                        <span class="pill-label">SSL 256-Bit</span>
                     </div>
 
-                    <!-- Auth Status / Account Dropdown -->
                     <div id="authHeaderContainer">
                         {% if current_user %}
-                        <div class="user-account-badge" id="userMenuToggle" onclick="toggleUserDropdown()" title="Logged in as {{ current_user.username }}">
-                            <div class="user-avatar-circle">{{ current_user.username[0].upper() }}</div>
-                            <span style="font-weight:600;">{{ current_user.username }}</span>
-                            <span class="role-pill {{ current_user.role }}">{{ current_user.role }}</span>
+                        <div style="display:flex;align-items:center;gap:0.4rem;">
+                            <div class="user-account-badge" title="Signed in as {{ current_user.username }}">
+                                <div class="user-avatar-circle">{{ current_user.username[0].upper() }}</div>
+                                <span class="user-name-label" style="font-weight:600;">{{ current_user.username }}</span>
+                                <span class="role-pill {{ current_user.role }}">{{ current_user.role }}</span>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm desktop-only-btn" data-action="logout">Sign Out</button>
                         </div>
                         {% else %}
                         <div style="display:flex;gap:0.4rem;">
-                            <button class="btn btn-secondary btn-sm" onclick="openAuthModal('login')">Sign In</button>
-                            <button class="btn btn-primary btn-sm" onclick="openAuthModal('register')">Register</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-action="open-auth" data-mode="login">Sign In</button>
+                            <button type="button" class="btn btn-primary btn-sm desktop-only-btn" data-action="open-auth" data-mode="register">Register</button>
                         </div>
                         {% endif %}
                     </div>
-
-                    <button class="btn btn-primary btn-sm" onclick="switchTab('aiStudio')">
-                        <span>+</span> New Product
-                    </button>
                 </div>
             </div>
         </div>
     </header>
 
-    <!-- Mobile Slide-out Drawer Backdrop & Drawer -->
-    <div class="mobile-nav-backdrop" id="mobileNavBackdrop" onclick="closeMobileDrawer()"></div>
-    <aside class="mobile-nav-drawer" id="mobileNavDrawer">
+    <!-- Mobile Slide-out Drawer -->
+    <div class="mobile-nav-backdrop" id="mobileNavBackdrop"></div>
+    <aside class="mobile-nav-drawer" id="mobileNavDrawer" aria-label="Mobile Navigation">
         <div class="mobile-drawer-header">
-            <div class="brand-wrapper" onclick="switchTab('catalogExplorer'); closeMobileDrawer();">
+            <div class="brand-wrapper" data-tab="catalogExplorer">
                 <div class="brand-icon">S</div>
                 <div class="brand-text">
                     <span class="brand-name">Suchit</span>
                     <span class="brand-tagline">Catalog Generator</span>
                 </div>
             </div>
-            <button class="modal-close-btn" onclick="closeMobileDrawer()">&times;</button>
+            <button type="button" class="modal-close-btn" id="mobileDrawerCloseBtn" aria-label="Close Menu">&times;</button>
         </div>
 
         <ul class="mobile-drawer-links">
-            <li><a class="nav-link active" data-tab="catalogExplorer" onclick="closeMobileDrawer()">📦 Catalog Explorer</a></li>
-            <li><a class="nav-link" data-tab="aiStudio" onclick="closeMobileDrawer()">✨ AI Studio Ingest</a></li>
-            <li><a class="nav-link" data-tab="checkoutSection" onclick="closeMobileDrawer()">💳 Order / Checkout</a></li>
-            <li><a class="nav-link" data-tab="contactSection" onclick="closeMobileDrawer()">💬 Contact Support</a></li>
-            <li><a class="nav-link" data-tab="exportCenter" onclick="closeMobileDrawer()">📥 Export Center</a></li>
-            <li><a class="nav-link" data-tab="settingsSection" onclick="closeMobileDrawer()">⚙️ Settings & Backups</a></li>
-            <li><a class="nav-link" data-tab="docsSection" onclick="closeMobileDrawer()">📖 API & Docs</a></li>
+            <li><a class="nav-link active" href="#catalogExplorer" data-tab="catalogExplorer">📦 Catalog Explorer</a></li>
+            {% if current_user and current_user.role in ('admin', 'editor') %}
+            <li><a class="nav-link" href="#aiStudio" data-tab="aiStudio">✨ AI Studio Ingest</a></li>
+            {% endif %}
+            <li><a class="nav-link" href="#checkoutSection" data-tab="checkoutSection">💳 Order / Checkout</a></li>
+            <li><a class="nav-link" href="#contactSection" data-tab="contactSection">💬 Contact Support</a></li>
+            <li><a class="nav-link" href="#exportCenter" data-tab="exportCenter">📥 Export Center</a></li>
+            {% if current_user and current_user.role == 'admin' %}
+            <li><a class="nav-link" href="#settingsSection" data-tab="settingsSection">🛡️ Admin Console</a></li>
+            {% endif %}
         </ul>
 
         <div style="margin-top:auto;padding-top:1.5rem;border-top:1px solid var(--border-color);">
-            <div id="mobileAuthControls">
-                <!-- Populated dynamically via JS -->
+            {% if current_user %}
+            <div style="font-size:0.88rem;margin-bottom:0.75rem;">
+                Signed in as <b>{{ current_user.username }}</b>
+                <span class="role-pill {{ current_user.role }}">{{ current_user.role }}</span>
             </div>
+            <button type="button" class="btn btn-secondary btn-sm" style="width:100%;" data-action="logout">Sign Out</button>
+            {% else %}
+            <div style="display:flex;gap:0.5rem;">
+                <button type="button" class="btn btn-secondary btn-sm" style="flex:1;" data-action="open-auth" data-mode="login">Sign In</button>
+                <button type="button" class="btn btn-primary btn-sm" style="flex:1;" data-action="open-auth" data-mode="register">Register</button>
+            </div>
+            {% endif %}
             <div style="margin-top:1rem;font-size:0.8rem;color:var(--text-muted);display:flex;align-items:center;gap:0.4rem;">
                 <span>🔒</span> 256-Bit SSL/TLS Connection
             </div>
@@ -131,6 +129,18 @@
          ==================================================================== -->
     <main class="main-content">
         <div class="app-container">
+
+            {% if current_user and not current_user.is_verified %}
+            <div class="alert-banner" id="emailVerificationBanner">
+                <div>
+                    <b>Email Verification Pending:</b> Please confirm the 6-digit verification code dispatched to <code>{{ current_user.email }}</code>.
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-primary btn-sm" data-action="verify-email-modal">Enter Code</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="resend-verification">Resend Email</button>
+                </div>
+            </div>
+            {% endif %}
 
             <!-- Metrics Summary Row -->
             <div class="metrics-grid">
@@ -168,25 +178,26 @@
             </div>
 
             <!-- ================================================================
-                 SECTION 1: CATALOG EXPLORER (DEFAULT VIEW)
+                 SECTION 1: CATALOG EXPLORER (PUBLIC READ-ONLY / AUTHORIZED ACTIONS)
                  ================================================================ -->
             <section class="content-section active" id="catalogExplorer">
                 <div class="section-header-row">
                     <div class="section-title-group">
                         <h2>Product Catalog Directory</h2>
-                        <p>Browse, search, edit, and export your catalog products</p>
+                        <p>Browse verified catalog products, technical specifications, and downloadable PDFs</p>
                     </div>
                     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                        <a href="/export/pdf" class="btn btn-secondary btn-sm" title="Download Complete Catalog PDF Book">
+                        <a href="/export/pdf" class="btn btn-secondary btn-sm" download>
                             📥 Download Catalog PDF
                         </a>
-                        <button class="btn btn-primary btn-sm" onclick="handleNewProductClick()">
+                        {% if current_user and current_user.role in ('admin', 'editor') %}
+                        <button type="button" class="btn btn-primary btn-sm" data-tab="aiStudio">
                             ✨ AI Product Ingest
                         </button>
+                        {% endif %}
                     </div>
                 </div>
 
-                <!-- Toolbar: Search, Filters, View Toggles -->
                 <div class="catalog-toolbar">
                     <div class="toolbar-filters">
                         <div class="search-input-wrapper">
@@ -196,15 +207,15 @@
                             <input type="text" id="catalogSearchInput" class="search-input" placeholder="Search by name, brand, category, tags...">
                         </div>
 
-                        <select id="categoryFilter" class="filter-select">
+                        <select id="categoryFilter" class="filter-select" aria-label="Filter by Category">
                             <option value="all">All Categories</option>
                         </select>
 
-                        <select id="brandFilter" class="filter-select">
+                        <select id="brandFilter" class="filter-select" aria-label="Filter by Brand">
                             <option value="all">All Brands</option>
                         </select>
 
-                        <select id="catalogSortSelect" class="filter-select">
+                        <select id="catalogSortSelect" class="filter-select" aria-label="Sort Catalog">
                             <option value="newest">Newest First</option>
                             <option value="name_asc">Name (A-Z)</option>
                             <option value="name_desc">Name (Z-A)</option>
@@ -215,87 +226,59 @@
 
                     <div class="toolbar-actions">
                         <div class="view-toggle">
-                            <button id="viewGridBtn" class="view-toggle-btn active" title="Grid View">
+                            <button type="button" id="viewGridBtn" class="view-toggle-btn active" title="Grid View" aria-label="Grid View">
                                 <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zm-8 8A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3z"/></svg>
                             </button>
-                            <button id="viewTableBtn" class="view-toggle-btn" title="Table View">
+                            <button type="button" id="viewTableBtn" class="view-toggle-btn" title="Table View" aria-label="Table View">
                                 <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm15 2h-14a1 1 0 0 0-1 1v2h16V5a1 1 0 0 0-1-1zm1 4H0v3h16V8zm0 4H0v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2z"/></svg>
                             </button>
                         </div>
-                        <button class="btn btn-secondary btn-sm" onclick="loadCatalogData()" title="Reload catalog">↻</button>
+                        <button type="button" id="reloadCatalogBtn" class="btn btn-secondary btn-sm" title="Reload catalog">↻</button>
                     </div>
                 </div>
 
-                <!-- Products Grid Container (Mobile Friendly) -->
-                <div id="productsGrid" class="products-grid">
-                    <!-- Dynamically populated by script.js -->
-                </div>
+                <div id="productsGrid" class="products-grid"></div>
+                <div id="productsTableWrapper" style="display:none;"></div>
 
-                <!-- Products Table Wrapper (Horizontal Touch Scroll Safe) -->
-                <div id="productsTableWrapper" style="display:none;">
-                    <!-- Dynamically populated by script.js -->
-                </div>
-
-                <!-- Empty State -->
                 <div id="catalogEmptyState" class="empty-state-box" style="display:none;">
                     <div class="empty-state-icon">🔍</div>
                     <h3>No Catalog Products Found</h3>
-                    <p>No products match your current search and filter criteria. You can clear filters or upload a new product image to generate catalog details.</p>
-                    <button class="btn btn-primary" onclick="switchTab('aiStudio')">
-                        Upload Product Image
-                    </button>
+                    <p>No products match your current search or filter criteria.</p>
                 </div>
             </section>
 
-
+            {% if current_user and current_user.role in ('admin', 'editor') %}
             <!-- ================================================================
-                 SECTION 2: AI STUDIO (THE 5-STEP WORKFLOW)
+                 SECTION 2: AI STUDIO (EDITOR / ADMIN ONLY - SERVER GATED)
                  ================================================================ -->
             <section class="content-section" id="aiStudio">
                 <div class="section-header-row">
                     <div class="section-title-group">
                         <h2>Suchit AI Catalog Studio</h2>
-                        <p>Upload a product photograph or packaging image to extract specifications, descriptions, and catalog attributes</p>
+                        <p>Authorized Workspace — Upload product media to sanitize, extract specifications, and publish records</p>
                     </div>
                 </div>
 
-                <!-- Workflow Stepper -->
                 <div class="workflow-stepper">
-                    <div class="step-item active" id="step1Indicator">
-                        <div class="step-circle">1</div>
-                        <span>Upload Image</span>
-                    </div>
+                    <div class="step-item active" id="step1Indicator"><div class="step-circle">1</div><span>Upload Image</span></div>
                     <div class="step-divider"></div>
-                    <div class="step-item" id="step2Indicator">
-                        <div class="step-circle">2</div>
-                        <span>Configure & AI Analyze</span>
-                    </div>
+                    <div class="step-item" id="step2Indicator"><div class="step-circle">2</div><span>Configure &amp; Analyze</span></div>
                     <div class="step-divider"></div>
-                    <div class="step-item" id="step3Indicator">
-                        <div class="step-circle">3</div>
-                        <span>Review & Refine</span>
-                    </div>
+                    <div class="step-item" id="step3Indicator"><div class="step-circle">3</div><span>Review &amp; Refine</span></div>
                     <div class="step-divider"></div>
-                    <div class="step-item" id="step4Indicator">
-                        <div class="step-circle">4</div>
-                        <span>Saved to Catalog</span>
-                    </div>
+                    <div class="step-item" id="step4Indicator"><div class="step-circle">4</div><span>Published</span></div>
                 </div>
 
-                <!-- Step 1: Upload Dropzone Card -->
                 <div id="uploadDropzone" class="dropzone-card">
                     <input type="file" id="catalogImageInput" class="file-hidden-input" accept="image/png, image/jpeg, image/jpg, image/webp">
                     <svg class="dropzone-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                     </svg>
-                    <h3 class="dropzone-title">Drag & Drop Product Image Here</h3>
-                    <p class="dropzone-subtitle">Supports PNG, JPG, JPEG, and WEBP up to 16MB. Image will be preprocessed with Pillow and analyzed via Gemini.</p>
-                    <button type="button" class="btn btn-secondary">
-                        Browse From Device
-                    </button>
+                    <h3 class="dropzone-title">Drag &amp; Drop Product Image Here</h3>
+                    <p class="dropzone-subtitle">PNG, JPG, JPEG, or WEBP up to 16MB. EXIF metadata is stripped automatically before AI analysis.</p>
+                    <button type="button" class="btn btn-secondary">Browse From Device</button>
                 </div>
 
-                <!-- Step 2: Selected Image Preview & Extraction Config -->
                 <div id="uploadPreviewBox" class="upload-preview-box">
                     <div class="preview-grid">
                         <div class="preview-image-frame">
@@ -305,15 +288,14 @@
                             <div class="preview-filename" id="previewFilename">filename.jpg</div>
                             <div class="preview-meta-chips">
                                 <span class="spec-chip" id="previewFilesize">0 KB</span>
-                                <span class="spec-chip">Pillow Ready</span>
-                                <span class="spec-chip">EXIF Orientation Auto-Correction</span>
+                                <span class="spec-chip">EXIF Sanitization Enabled</span>
                             </div>
 
                             <div style="margin-top:1rem;display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
                                 <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px;">
-                                    <label for="aiModelSelect" style="font-size:0.8rem;">Gemini Model:</label>
-                                    <select id="aiModelSelect" class="form-control" style="padding:0.45rem 0.75rem;">
-                                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended - Fastest & Accurate)</option>
+                                    <label for="aiModelSelect" style="font-size:0.8rem;">Gemini Engine:</label>
+                                    <select id="aiModelSelect" class="form-control">
+                                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
                                         <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
                                         <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                                     </select>
@@ -321,302 +303,248 @@
                             </div>
 
                             <div style="margin-top:1.25rem;display:flex;gap:0.75rem;flex-wrap:wrap;">
-                                <button type="button" id="startAiAnalysisBtn" class="btn btn-primary">
-                                    ✨ Generate Catalog Content
-                                </button>
-                                <button type="button" id="clearSelectedImageBtn" class="btn btn-secondary">
-                                    Replace Image
-                                </button>
+                                <button type="button" id="startAiAnalysisBtn" class="btn btn-primary">✨ Generate Catalog Draft</button>
+                                <button type="button" id="clearSelectedImageBtn" class="btn btn-secondary">Replace Image</button>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Processing Spinner Card -->
                 <div id="aiProgressCard" class="ai-progress-card">
                     <div class="ai-spinner"></div>
-                    <h3 style="font-size:1.2rem;font-weight:700;color:#0f172a;">Analyzing Product Image with Gemini</h3>
-                    <div class="progress-bar-bg">
-                        <div id="aiProgressBarFill" class="progress-bar-fill"></div>
-                    </div>
-                    <p id="aiProgressStatus" style="font-size:0.88rem;color:#64748b;">Preprocessing image with Pillow...</p>
+                    <h3 style="font-size:1.2rem;font-weight:700;color:#0f172a;">Processing Media &amp; Extracting Details</h3>
+                    <div class="progress-bar-bg"><div id="aiProgressBarFill" class="progress-bar-fill"></div></div>
+                    <p id="aiProgressStatus" style="font-size:0.88rem;color:#64748b;">Running Pillow sanitization...</p>
                 </div>
 
-                <!-- Step 3: Side-by-Side Review Workspace -->
                 <div id="reviewWorkspace" class="review-workspace">
-                    <!-- Left: Media Inspector -->
                     <div class="review-media-panel">
-                        <h4 style="font-size:0.95rem;font-weight:700;color:#0f172a;margin-bottom:0.75rem;">Source Image Inspection</h4>
+                        <h4 style="font-size:0.95rem;font-weight:700;color:#0f172a;margin-bottom:0.75rem;">Source Media</h4>
                         <img id="reviewLargeImage" class="review-large-img" src="" alt="Source Image">
-                        <div id="reviewMediaMeta" style="font-size:0.8rem;color:#64748b;line-height:1.5;background:#f8fafc;padding:0.6rem;border-radius:6px;border:1px solid #e2e8f0;">
-                            <!-- Populated dynamically -->
-                        </div>
-                        <div style="margin-top:1rem;">
-                            <span class="badge badge-verified" style="margin-bottom:0.4rem;">✓ Packaging Text Verified</span>
-                            <span class="badge badge-ai">✨ AI Enriched Marketing Copy</span>
-                        </div>
+                        <div id="reviewMediaMeta" style="font-size:0.8rem;color:#64748b;line-height:1.5;background:#f8fafc;padding:0.6rem;border-radius:6px;border:1px solid #e2e8f0;"></div>
                     </div>
 
-                    <!-- Right: Editable Structured Form -->
                     <div class="review-form-panel">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;border-bottom:1px solid #e2e8f0;padding-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
                             <div>
-                                <h3 style="font-size:1.3rem;font-weight:800;color:#0f172a;">Review & Refine Catalog Details</h3>
-                                <p style="font-size:0.85rem;color:#64748b;">Review AI-generated fields, adjust specifications, and commit to the database.</p>
+                                <h3 style="font-size:1.3rem;font-weight:800;color:#0f172a;">Review &amp; Publish Product</h3>
+                                <p style="font-size:0.85rem;color:#64748b;">Verify specifications before committing to authoritative database.</p>
                             </div>
                             <div style="display:flex;gap:0.5rem;">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="resetStudioUploadState()">Discard</button>
-                                <button type="button" class="btn btn-success btn-sm" onclick="saveReviewedCatalogItem()">Save to Catalog</button>
+                                <button type="button" id="discardDraftTopBtn" class="btn btn-secondary btn-sm">Discard</button>
+                                <button type="button" id="saveDraftTopBtn" class="btn btn-success btn-sm">Save to Catalog</button>
                             </div>
                         </div>
 
-                        <!-- Basic Attributes -->
                         <fieldset class="form-fieldset">
-                            <legend class="form-fieldset-legend">1. Core Product Identity</legend>
+                            <legend class="form-fieldset-legend">1. Product Identity</legend>
                             <div class="form-group">
                                 <label for="reviewProductName">Product Title *</label>
-                                <input type="text" id="reviewProductName" class="form-control" placeholder="e.g. boAt Airdopes True Wireless Earbuds">
+                                <input type="text" id="reviewProductName" class="form-control">
                             </div>
-
                             <div class="form-grid-2">
-                                <div class="form-group">
-                                    <label for="reviewBrand">Brand Name</label>
-                                    <input type="text" id="reviewBrand" class="form-control" placeholder="e.g. boAt, Apple, Sony">
-                                </div>
-                                <div class="form-group">
-                                    <label for="reviewModel">Model Identifier</label>
-                                    <input type="text" id="reviewModel" class="form-control" placeholder="e.g. Airdopes 131, A2633">
-                                </div>
+                                <div class="form-group"><label for="reviewBrand">Brand</label><input type="text" id="reviewBrand" class="form-control"></div>
+                                <div class="form-group"><label for="reviewModel">Model</label><input type="text" id="reviewModel" class="form-control"></div>
                             </div>
-
                             <div class="form-grid-2">
-                                <div class="form-group">
-                                    <label for="reviewCategory">Product Category</label>
-                                    <input type="text" id="reviewCategory" class="form-control" placeholder="e.g. Electronics & Audio">
-                                </div>
-                                <div class="form-group">
-                                    <label for="reviewPrice">Price (with Currency)</label>
-                                    <input type="text" id="reviewPrice" class="form-control" placeholder="e.g. ₹1,499 or $799">
-                                </div>
+                                <div class="form-group"><label for="reviewCategory">Category</label><input type="text" id="reviewCategory" class="form-control"></div>
+                                <div class="form-group"><label for="reviewPrice">Price</label><input type="text" id="reviewPrice" class="form-control"></div>
                             </div>
-
-                            <div class="form-group">
-                                <label for="reviewDimensions">Physical Dimensions</label>
-                                <input type="text" id="reviewDimensions" class="form-control" placeholder="e.g. 50 x 50 x 25 mm">
-                            </div>
+                            <div class="form-group"><label for="reviewDimensions">Dimensions</label><input type="text" id="reviewDimensions" class="form-control"></div>
                         </fieldset>
 
-                        <!-- Descriptions -->
                         <fieldset class="form-fieldset">
-                            <legend class="form-fieldset-legend">2. Product Descriptions</legend>
-                            <div class="form-group">
-                                <label for="reviewShortDesc">Short Summary (1-2 sentences for card views)</label>
-                                <input type="text" id="reviewShortDesc" class="form-control" placeholder="Crisp summary">
-                            </div>
-
-                            <div class="form-group">
-                                <label for="reviewDesc">Detailed Marketing Description</label>
-                                <textarea id="reviewDesc" class="form-control" placeholder="Comprehensive catalog overview"></textarea>
-                            </div>
+                            <legend class="form-fieldset-legend">2. Descriptions</legend>
+                            <div class="form-group"><label for="reviewShortDesc">Short Summary</label><input type="text" id="reviewShortDesc" class="form-control"></div>
+                            <div class="form-group"><label for="reviewDesc">Full Description</label><textarea id="reviewDesc" class="form-control"></textarea></div>
                         </fieldset>
 
-                        <!-- Features Editor -->
                         <fieldset class="form-fieldset">
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
                                 <legend class="form-fieldset-legend" style="margin-bottom:0;">3. Key Features</legend>
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="addFeatureRow()">+ Add Feature</button>
+                                <button type="button" id="addFeatureRowBtn" class="btn btn-secondary btn-sm">+ Add Feature</button>
                             </div>
                             <div id="dynamicFeaturesContainer"></div>
                         </fieldset>
 
-                        <!-- Technical Specs Editor -->
                         <fieldset class="form-fieldset">
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
-                                <legend class="form-fieldset-legend" style="margin-bottom:0;">4. Technical Specifications Table</legend>
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="addSpecRow()">+ Add Specification</button>
+                                <legend class="form-fieldset-legend" style="margin-bottom:0;">4. Technical Specifications</legend>
+                                <button type="button" id="addSpecRowBtn" class="btn btn-secondary btn-sm">+ Add Spec</button>
                             </div>
                             <div id="dynamicSpecsContainer"></div>
                         </fieldset>
 
-                        <!-- Commercial Highlights & Selling Points -->
                         <fieldset class="form-fieldset">
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
-                                <legend class="form-fieldset-legend" style="margin-bottom:0;">5. Commercial Selling Points (USPs)</legend>
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="addUspRow()">+ Add Selling Point</button>
+                                <legend class="form-fieldset-legend" style="margin-bottom:0;">5. Selling Points</legend>
+                                <button type="button" id="addUspRowBtn" class="btn btn-secondary btn-sm">+ Add Highlight</button>
                             </div>
                             <div id="dynamicUspContainer"></div>
                         </fieldset>
 
-                        <!-- SEO & Keywords -->
                         <fieldset class="form-fieldset">
-                            <legend class="form-fieldset-legend">6. Search & SEO Metadata</legend>
-                            <div class="form-group">
-                                <label for="reviewTags">Search Keywords & Tags (comma-separated)</label>
-                                <input type="text" id="reviewTags" class="form-control" placeholder="earbuds, bluetooth, audio, wireless">
-                            </div>
-
+                            <legend class="form-fieldset-legend">6. Search &amp; SEO</legend>
+                            <div class="form-group"><label for="reviewTags">Tags (comma-separated)</label><input type="text" id="reviewTags" class="form-control"></div>
                             <div class="form-grid-2">
-                                <div class="form-group">
-                                    <label for="reviewSeoTitle">SEO Title</label>
-                                    <input type="text" id="reviewSeoTitle" class="form-control" placeholder="SEO Title">
-                                </div>
-                                <div class="form-group">
-                                    <label for="reviewSeoDesc">SEO Meta Description</label>
-                                    <input type="text" id="reviewSeoDesc" class="form-control" placeholder="SEO Description">
-                                </div>
+                                <div class="form-group"><label for="reviewSeoTitle">SEO Title</label><input type="text" id="reviewSeoTitle" class="form-control"></div>
+                                <div class="form-group"><label for="reviewSeoDesc">SEO Description</label><input type="text" id="reviewSeoDesc" class="form-control"></div>
                             </div>
                         </fieldset>
 
-                        <!-- Form Action Buttons -->
                         <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.5rem;flex-wrap:wrap;">
-                            <button type="button" class="btn btn-secondary" onclick="resetStudioUploadState()">Discard Draft</button>
-                            <button type="button" class="btn btn-success btn-lg" onclick="saveReviewedCatalogItem()">
-                                ✓ Commit to Suchit Catalog
-                            </button>
+                            <button type="button" id="discardDraftBottomBtn" class="btn btn-secondary">Discard Draft</button>
+                            <button type="button" id="saveDraftBottomBtn" class="btn btn-success btn-lg">✓ Commit to Catalog</button>
                         </div>
                     </div>
                 </div>
             </section>
-
+            {% endif %}
 
             <!-- ================================================================
-                 SECTION 3: COMMERCIAL CHECKOUT & ORDER
+                 SECTION 3: COMMERCIAL CHECKOUT (AUTHENTICATED, SERVER-PRICED)
                  ================================================================ -->
             <section class="content-section" id="checkoutSection">
                 <div class="section-header-row">
                     <div class="section-title-group">
-                        <h2>Commercial Checkout & Product Order</h2>
-                        <p>Purchase commercial distribution licenses or sample catalog assets with verified secure processing</p>
+                        <h2>Commercial Checkout &amp; Licensing</h2>
+                        <p>All pricing, GST (18%), and payment validation are computed strictly server-side</p>
                     </div>
                 </div>
 
+                {% if not current_user %}
+                <div class="role-locked-box">
+                    <div style="font-size:2rem;margin-bottom:0.5rem;">🔐</div>
+                    <h3 style="margin-bottom:0.5rem;">Sign In Required to Authorize Orders</h3>
+                    <p style="font-size:0.9rem;color:var(--text-muted);max-width:460px;margin:0 auto 1.25rem;">
+                        Commercial checkout requires an authenticated account so receipts, licenses, and order histories remain bound securely to your profile.
+                    </p>
+                    <div style="display:flex;justify-content:center;gap:0.75rem;flex-wrap:wrap;">
+                        <button type="button" class="btn btn-primary" data-action="open-auth" data-mode="login">Sign In</button>
+                        <button type="button" class="btn btn-secondary" data-action="open-auth" data-mode="register">Create Free Account</button>
+                    </div>
+                </div>
+                {% endif %}
+
                 <div class="checkout-grid">
-                    <!-- Checkout Form Panel -->
                     <div class="table-card" style="padding:1.75rem;">
-                        <h3 style="font-size:1.2rem;font-weight:700;margin-bottom:1.25rem;">1. Customer & Delivery Information</h3>
-                        <form id="checkoutForm" onsubmit="handleCheckoutSubmit(event)">
+                        <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:1.25rem;">1. Customer &amp; Delivery Details</h3>
+                        <form id="checkoutForm">
                             <div class="form-grid-2">
                                 <div class="form-group">
                                     <label for="checkoutCustomerName">Full Name *</label>
-                                    <input type="text" id="checkoutCustomerName" class="form-control" placeholder="Jane Doe" required>
+                                    <input type="text" id="checkoutCustomerName" class="form-control" placeholder="Jane Doe" value="{{ current_user.username if current_user else '' }}" required>
                                 </div>
                                 <div class="form-group">
-                                    <label for="checkoutCustomerEmail">Email Address *</label>
-                                    <input type="email" id="checkoutCustomerEmail" class="form-control" placeholder="jane@example.com" required>
+                                    <label for="checkoutCustomerEmail">Verified Email *</label>
+                                    <input type="email" id="checkoutCustomerEmail" class="form-control" placeholder="jane@company.com" value="{{ current_user.email if current_user else '' }}" required>
                                 </div>
                             </div>
 
-                            <div class="form-group">
-                                <label for="checkoutAddress">Billing / Shipping Address *</label>
-                                <input type="text" id="checkoutAddress" class="form-control" placeholder="123 Commercial Plaza, Suite 400" required>
+                            <div class="form-grid-2">
+                                <div class="form-group">
+                                    <label for="checkoutAddress">Billing / Delivery Address *</label>
+                                    <input type="text" id="checkoutAddress" class="form-control" placeholder="123 Commercial Plaza, Suite 400" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="checkoutQuantity">Quantity (1–50)</label>
+                                    <input type="number" id="checkoutQuantity" class="form-control" min="1" max="50" value="1" required>
+                                </div>
                             </div>
 
-                            <h3 style="font-size:1.2rem;font-weight:700;margin:1.75rem 0 1rem;padding-top:1.25rem;border-top:1px solid var(--border-color);">
+                            <h3 style="font-size:1.15rem;font-weight:700;margin:1.5rem 0 1rem;padding-top:1.25rem;border-top:1px solid var(--border-color);">
                                 2. Payment Method
                             </h3>
 
                             <div class="payment-method-selector">
-                                <div class="payment-option-card selected" onclick="selectPaymentMethod('Credit Card', this)">
-                                    <div style="font-size:1.5rem;margin-bottom:0.25rem;">💳</div>
+                                <div class="payment-option-card selected" data-payment-method="Credit Card">
+                                    <div style="font-size:1.4rem;margin-bottom:0.2rem;">💳</div>
                                     <div style="font-size:0.85rem;font-weight:700;">Credit / Debit</div>
                                 </div>
-                                <div class="payment-option-card" onclick="selectPaymentMethod('UPI', this)">
-                                    <div style="font-size:1.5rem;margin-bottom:0.25rem;">📱</div>
+                                <div class="payment-option-card" data-payment-method="UPI">
+                                    <div style="font-size:1.4rem;margin-bottom:0.2rem;">📱</div>
                                     <div style="font-size:0.85rem;font-weight:700;">UPI / QR</div>
                                 </div>
-                                <div class="payment-option-card" onclick="selectPaymentMethod('Net Banking', this)">
-                                    <div style="font-size:1.5rem;margin-bottom:0.25rem;">🏦</div>
+                                <div class="payment-option-card" data-payment-method="Net Banking">
+                                    <div style="font-size:1.4rem;margin-bottom:0.2rem;">🏦</div>
                                     <div style="font-size:0.85rem;font-weight:700;">Net Banking</div>
                                 </div>
-                                <div class="payment-option-card" onclick="selectPaymentMethod('Corporate Invoice', this)">
-                                    <div style="font-size:1.5rem;margin-bottom:0.25rem;">📑</div>
+                                <div class="payment-option-card" data-payment-method="Corporate Invoice">
+                                    <div style="font-size:1.4rem;margin-bottom:0.2rem;">📑</div>
                                     <div style="font-size:0.85rem;font-weight:700;">Purchase Order</div>
                                 </div>
                             </div>
 
-                            <!-- Card Details Fields -->
                             <div id="cardPaymentFields">
-                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-                                    <label style="font-size:0.85rem;font-weight:600;color:var(--text-secondary);">Card Details (256-Bit TLS Encrypted)</label>
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="fillTestCardDetails()" style="font-size:0.75rem;padding:0.2rem 0.5rem;">
-                                        ⚡ Fill 1-Click Test Card
-                                    </button>
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.4rem;">
+                                    <label style="font-size:0.85rem;font-weight:600;color:var(--text-secondary);">Card Details (Luhn Validated, Never Stored)</label>
+                                    <button type="button" id="fillTestCardBtn" class="btn btn-secondary btn-sm">⚡ Fill Test Card</button>
                                 </div>
                                 <div class="form-group">
-                                    <input type="text" id="checkoutCardNumber" class="form-control" placeholder="4242 •••• •••• 4242" maxlength="19">
+                                    <input type="text" id="checkoutCardNumber" class="form-control" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number">
                                 </div>
                                 <div class="form-grid-2">
                                     <div class="form-group">
-                                        <label for="checkoutCardExpiry">Expiry Date</label>
-                                        <input type="text" id="checkoutCardExpiry" class="form-control" placeholder="MM/YY" maxlength="5">
+                                        <label for="checkoutCardExpiry">Expiry (MM/YY)</label>
+                                        <input type="text" id="checkoutCardExpiry" class="form-control" placeholder="12/28" maxlength="5" autocomplete="cc-exp">
                                     </div>
                                     <div class="form-group">
-                                        <label for="checkoutCardCvv">Security Code (CVV)</label>
-                                        <input type="password" id="checkoutCardCvv" class="form-control" placeholder="•••" maxlength="4">
+                                        <label for="checkoutCardCvv">CVV</label>
+                                        <input type="password" id="checkoutCardCvv" class="form-control" placeholder="•••" maxlength="4" autocomplete="cc-csc">
                                     </div>
                                 </div>
                             </div>
 
                             <button type="submit" id="checkoutSubmitBtn" class="btn btn-success btn-lg" style="width:100%;margin-top:1.5rem;">
-                                🔒 Complete Secure Payment
+                                🔒 Complete Verified Payment
                             </button>
                         </form>
                     </div>
 
-                    <!-- Order Summary Box -->
                     <div class="order-summary-box">
                         <h3 style="font-size:1.15rem;font-weight:800;color:var(--text-primary);margin-bottom:1rem;">Order Summary</h3>
-                        
-                        <div class="form-group" style="margin-bottom:1.25rem;">
-                            <label for="checkoutProductSelect" style="font-size:0.82rem;">Select Product:</label>
-                            <select id="checkoutProductSelect" class="form-control" onchange="updateCheckoutProductSummary()"></select>
+                        <div class="form-group" style="margin-bottom:1rem;">
+                            <label for="checkoutProductSelect" style="font-size:0.82rem;">Select Catalog Product:</label>
+                            <select id="checkoutProductSelect" class="form-control"></select>
                         </div>
 
-                        <div id="checkoutProductThumbnailBox" style="height:150px;background:#fff;border-radius:8px;border:1px solid var(--border-color);overflow:hidden;margin-bottom:1rem;display:flex;align-items:center;justify-content:center;">
-                            <img id="checkoutThumbImg" src="" alt="Thumbnail" style="max-height:100%;object-fit:contain;">
-                        </div>
+                        <div id="checkoutProductThumbnailBox" style="aspect-ratio:4/3;background:#0f172a;border-radius:8px;border:1px solid var(--border-color);overflow:hidden;margin-bottom:1rem;"></div>
 
-                        <div class="summary-row">
-                            <span>Catalog License:</span>
-                            <span id="summaryProductName" style="font-weight:600;">boAt Airdopes 131 Pro</span>
-                        </div>
-                        <div class="summary-row">
-                            <span>Base Price:</span>
-                            <span id="summaryBasePrice">₹1,499.00</span>
-                        </div>
-                        <div class="summary-row">
-                            <span>Applicable GST / Tax (18%):</span>
-                            <span id="summaryTaxAmount">₹269.82</span>
-                        </div>
-                        <div class="summary-row total">
-                            <span>Total Payable:</span>
-                            <span id="summaryTotalAmount" style="color:var(--success);">₹1,768.82</span>
-                        </div>
-
-                        <div style="margin-top:1.25rem;font-size:0.78rem;color:var(--text-muted);display:flex;align-items:center;gap:0.4rem;">
-                            <span>🔒</span> Instant delivery with verified PDF receipt.
+                        <div class="summary-row"><span>Catalog Item:</span><span id="summaryProductName" style="font-weight:600;">—</span></div>
+                        <div class="summary-row"><span>Subtotal:</span><span id="summaryBasePrice">—</span></div>
+                        <div class="summary-row"><span>Applicable GST (18%):</span><span id="summaryTaxAmount">—</span></div>
+                        <div class="summary-row total"><span>Total Payable:</span><span id="summaryTotalAmount" style="color:var(--success);">—</span></div>
+                        <div style="margin-top:1rem;font-size:0.78rem;color:var(--text-muted);display:flex;align-items:center;gap:0.4rem;">
+                            <span>🔒</span> Server-side Decimal pricing &amp; instant queued email receipt.
                         </div>
                     </div>
                 </div>
+
+                {% if current_user %}
+                <div class="table-card" style="padding:1.5rem;margin-top:2rem;">
+                    <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:1rem;">Account Order History</h3>
+                    <div id="userOrdersHistoryBox">
+                        <p style="font-size:0.85rem;color:var(--text-muted);">Loading your order history...</p>
+                    </div>
+                </div>
+                {% endif %}
             </section>
 
-
             <!-- ================================================================
-                 SECTION 4: CONTACT & INQUIRIES
+                 SECTION 4: CONTACT SUPPORT & COMMERCIAL INQUIRIES
                  ================================================================ -->
             <section class="content-section" id="contactSection">
                 <div class="section-header-row">
                     <div class="section-title-group">
-                        <h2>Contact Support & Commercial Inquiries</h2>
-                        <p>Need assistance or custom enterprise catalog integrations? Send our team a message</p>
+                        <h2>Contact Support &amp; Commercial Inquiries</h2>
+                        <p>Reach our support desk directly for licensing, bulk cataloging, or order assistance</p>
                     </div>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 340px;gap:2rem;">
-                    <!-- Inquiry Form -->
+                <div class="contact-grid">
                     <div class="table-card" style="padding:1.75rem;">
                         <h3 style="font-size:1.2rem;font-weight:700;margin-bottom:1.25rem;">Send an Inquiry</h3>
-                        <form id="contactForm" onsubmit="handleContactSubmit(event)">
+                        <form id="contactForm">
                             <div class="form-grid-2">
                                 <div class="form-group">
                                     <label for="contactName">Your Name *</label>
@@ -631,15 +559,15 @@
                             <div class="form-grid-2">
                                 <div class="form-group">
                                     <label for="contactCompany">Company / Brand (Optional)</label>
-                                    <input type="text" id="contactCompany" class="form-control" placeholder="Acme Inc.">
+                                    <input type="text" id="contactCompany" class="form-control" placeholder="Acme Corp">
                                 </div>
                                 <div class="form-group">
                                     <label for="contactCategory">Inquiry Type</label>
                                     <select id="contactCategory" class="form-control">
                                         <option value="General Support">General Support</option>
                                         <option value="Commercial Licensing">Commercial Licensing</option>
-                                        <option value="Bulk Ingestion">Bulk Image Ingestion</option>
-                                        <option value="API Integration">API Integration</option>
+                                        <option value="Custom Product Quote">Custom Product Quote</option>
+                                        <option value="Bulk Ingestion">Bulk Catalog Ingestion</option>
                                     </select>
                                 </div>
                             </div>
@@ -651,34 +579,28 @@
 
                             <div class="form-group">
                                 <label for="contactMessage">Message *</label>
-                                <textarea id="contactMessage" class="form-control" style="min-height:120px;" placeholder="Please describe how we can assist you..." required></textarea>
+                                <textarea id="contactMessage" class="form-control" style="min-height:120px;" placeholder="Please share details..." required></textarea>
                             </div>
 
-                            <button type="submit" id="contactSubmitBtn" class="btn btn-primary btn-lg" style="margin-top:1rem;">
+                            <button type="submit" id="contactSubmitBtn" class="btn btn-primary btn-lg" style="margin-top:0.75rem;">
                                 ✉️ Send Inquiry
                             </button>
                         </form>
                     </div>
 
-                    <!-- Direct Contact Info Card -->
                     <div class="table-card" style="padding:1.75rem;height:fit-content;">
                         <h3 style="font-size:1.15rem;font-weight:700;color:var(--text-primary);margin-bottom:1rem;">Direct Channels</h3>
-                        
                         <div style="font-size:0.9rem;line-height:1.8;color:var(--text-secondary);margin-bottom:1.5rem;">
                             <div><b>Domain Email:</b><br><a href="mailto:{{ domain_email }}">{{ domain_email }}</a></div>
-                            <div style="margin-top:0.75rem;"><b>Direct WhatsApp:</b><br><a href="https://wa.me/{{ whatsapp_number }}" target="_blank" rel="noopener">{{ whatsapp_number }}</a></div>
-                            <div style="margin-top:0.75rem;"><b>Working Hours:</b><br>Monday – Saturday, 9:00 AM – 6:00 PM IST</div>
+                            <div style="margin-top:0.75rem;"><b>Direct WhatsApp:</b><br><a href="https://wa.me/{{ whatsapp_number | replace('+', '') }}" target="_blank" rel="noopener">{{ whatsapp_number }}</a></div>
+                            <div style="margin-top:0.75rem;"><b>Support Hours:</b><br>Mon – Sat, 9:00 AM – 6:00 PM IST</div>
                         </div>
-
-                        <div style="padding-top:1rem;border-top:1px solid var(--border-color);">
-                            <a href="https://wa.me/{{ whatsapp_number }}?text=Hello%20Suchit%20Catalog%20Support" target="_blank" rel="noopener" class="btn btn-success" style="width:100%;background-color:var(--whatsapp);border-color:var(--whatsapp);">
-                                💬 Open WhatsApp Chat
-                            </a>
-                        </div>
+                        <a href="https://wa.me/{{ whatsapp_number | replace('+', '') }}?text=Hello%20Suchit%20Catalog%20Support" target="_blank" rel="noopener" class="btn btn-success" style="width:100%;background-color:var(--whatsapp);border-color:var(--whatsapp);">
+                            💬 Open WhatsApp Chat
+                        </a>
                     </div>
                 </div>
             </section>
-
 
             <!-- ================================================================
                  SECTION 5: EXPORT CENTER
@@ -687,237 +609,145 @@
                 <div class="section-header-row">
                     <div class="section-title-group">
                         <h2>Catalog Export Center</h2>
-                        <p>Generate presentable PDF catalog sheets, spreadsheets, or raw JSON for multi-channel distribution</p>
+                        <p>Download typeset PDF catalogs, RFC 4180 formula-safe CSV spreadsheets, or JSON feeds</p>
                     </div>
                 </div>
 
                 <div class="export-cards-grid">
-                    <!-- PDF Full Catalog -->
                     <div class="export-box">
                         <div>
                             <div class="export-box-header">
                                 <div class="export-icon-box" style="background:#fee2e2;color:#dc2626;">📄</div>
                                 <div>
                                     <h3>Comprehensive Catalog PDF</h3>
-                                    <p>Typeset multi-page product book with cover page, index summary, high-resolution product photos, and full specifications.</p>
+                                    <p>Typeset multi-page product book with cover index, verified product artwork, and spec tables.</p>
                                 </div>
                             </div>
-                            <div style="font-size:0.82rem;color:#64748b;margin-bottom:1rem;">
-                                • Professional ReportLab layout with page numbering<br>
-                                • Clean typography and specifications tables<br>
-                                • Branded with Suchit Catalog Header & Footer
-                            </div>
                         </div>
-                        <a href="/export/pdf" class="btn btn-primary" download>
-                            Download Full PDF Catalog
-                        </a>
+                        <a href="/export/pdf" class="btn btn-primary" download>Download Full PDF Catalog</a>
                     </div>
 
-                    <!-- CSV Spreadsheet -->
                     <div class="export-box">
                         <div>
                             <div class="export-box-header">
                                 <div class="export-icon-box" style="background:#dcfce7;color:#16a34a;">📊</div>
                                 <div>
-                                    <h3>Excel & CSV Spreadsheet</h3>
-                                    <p>Full catalog tabular export encoded in UTF-8 with BOM, formatted for immediate import into Excel, Google Sheets, Amazon, or Shopify.</p>
+                                    <h3>Excel &amp; CSV Spreadsheet</h3>
+                                    <p>UTF-8 with BOM CSV sanitized against Excel formula injection for instant storefront imports.</p>
                                 </div>
                             </div>
-                            <div style="font-size:0.82rem;color:#64748b;margin-bottom:1rem;">
-                                • Preserves currency symbols (₹, $, €)<br>
-                                • All metadata, tags, dimensions, and specs<br>
-                                • Standard RFC 4180 CSV quoting
-                            </div>
                         </div>
-                        <a href="/export/csv" class="btn btn-success" download>
-                            Download CSV Spreadsheet
-                        </a>
+                        <a href="/export/csv" class="btn btn-success" download>Download CSV Spreadsheet</a>
                     </div>
 
-                    <!-- Structured JSON -->
                     <div class="export-box">
                         <div>
                             <div class="export-box-header">
                                 <div class="export-icon-box" style="background:#e0f2fe;color:#0284c7;">⚙️</div>
                                 <div>
                                     <h3>Structured JSON Feed</h3>
-                                    <p>Formatted JSON document with top-level catalog metadata and typed arrays, ready for headless CMS or e-commerce API pipelines.</p>
+                                    <p>Clean structured product feed with typed features, specifications, and SEO fields.</p>
                                 </div>
                             </div>
-                            <div style="font-size:0.82rem;color:#64748b;margin-bottom:1rem;">
-                                • Complete nested dictionary and list types<br>
-                                • UTF-8 Unicode characters preserved<br>
-                                • API integration compatible
-                            </div>
                         </div>
-                        <a href="/export/json" class="btn btn-secondary" download>
-                            Download JSON Feed
-                        </a>
+                        <a href="/export/json" class="btn btn-secondary" download>Download JSON Feed</a>
                     </div>
                 </div>
             </section>
 
-
+            {% if current_user and current_user.role == 'admin' %}
             <!-- ================================================================
-                 SECTION 6: SETTINGS, BACKUPS & CONFIGURATION
+                 SECTION 6: ADMIN CONSOLE (STRICT ADMIN ONLY - HIDDEN FROM NON-ADMINS)
                  ================================================================ -->
             <section class="content-section" id="settingsSection">
                 <div class="section-header-row">
                     <div class="section-title-group">
-                        <h2>Application Settings & Disaster Recovery</h2>
-                        <p>Configure Google Gemini AI, Domain Email, Google Analytics, and create database snapshots</p>
+                        <h2>Administrator Console &amp; Disaster Recovery</h2>
+                        <p>Manage server-side encrypted API keys, GA4, Domain SMTP, ACID backups, and Worker Queues</p>
                     </div>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;">
-                    <!-- API Configuration Card (Key Masked & Protected) -->
-                    <div class="table-card" style="padding:1.75rem;">
-                        <h3 style="font-size:1.15rem;font-weight:700;color:#0f172a;margin-bottom:0.75rem;">1. Google Gemini AI Key (Encrypted)</h3>
-                        <p style="font-size:0.88rem;color:#64748b;margin-bottom:1.25rem;">
-                            For security, API keys are encrypted server-side and never exposed in plaintext to the frontend.
-                        </p>
+                <div id="adminQueueMetricsBox" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem;"></div>
 
+                <div class="settings-grid">
+                    <div class="table-card" style="padding:1.75rem;">
+                        <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:0.75rem;">1. Gemini AI Key (Server Encrypted)</h3>
+                        <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:1rem;">Raw keys stay strictly server-side and never reach client JS.</p>
                         <div class="form-group">
-                            <label>Current Status</label>
-                            <div id="apiKeyMaskedDisplay" style="padding:0.6rem 0.85rem;background:var(--bg-subtle);border-radius:var(--radius-sm);border:1px solid var(--border-color);font-family:monospace;font-size:0.9rem;">
-                                Loading key status...
+                            <label>Key Status</label>
+                            <div id="apiKeyMaskedDisplay" style="padding:0.6rem 0.85rem;background:var(--bg-subtle);border-radius:var(--radius-sm);border:1px solid var(--border-color);font-family:monospace;font-size:0.88rem;">
+                                Loading status...
                             </div>
                         </div>
-
-                        <div id="apiKeyEditBlock" style="margin-top:1rem;">
-                            <div class="form-group">
-                                <label for="settingsApiKeyInput">Update Gemini API Key</label>
-                                <input type="password" id="settingsApiKeyInput" class="form-control" placeholder="Enter new Google AI Studio key...">
-                            </div>
-                            <div id="apiKeyTestResult" style="display:none;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;font-size:0.85rem;margin-bottom:1rem;"></div>
-                            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
-                                <button type="button" id="testApiKeyBtn" class="btn btn-secondary btn-sm">🔌 Test Key Connection</button>
-                                <button type="button" id="saveSettingsBtn" class="btn btn-primary btn-sm">Save Key</button>
-                            </div>
+                        <div class="form-group">
+                            <label for="settingsApiKeyInput">Rotate Gemini API Key</label>
+                            <input type="password" id="settingsApiKeyInput" class="form-control" placeholder="Enter new AI Studio key...">
+                        </div>
+                        <div id="apiKeyTestResult" style="display:none;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;font-size:0.85rem;margin-bottom:1rem;"></div>
+                        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+                            <button type="button" id="testApiKeyBtn" class="btn btn-secondary btn-sm">🔌 Test Connection</button>
+                            <button type="button" id="saveSettingsBtn" class="btn btn-primary btn-sm">Save Key</button>
                         </div>
                     </div>
 
-                    <!-- Google Analytics 4 Card -->
                     <div class="table-card" style="padding:1.75rem;">
-                        <h3 style="font-size:1.15rem;font-weight:700;color:#0f172a;margin-bottom:0.75rem;">2. Google Analytics 4 (GA4)</h3>
-                        <p style="font-size:0.88rem;color:#64748b;margin-bottom:1.25rem;">
-                            Connect your GA4 Measurement ID to track catalog visits, searches, and PDF downloads.
-                        </p>
-
+                        <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:0.75rem;">2. Google Analytics 4 (GA4)</h3>
+                        <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:1rem;">Validated Measurement ID format (<code>G-XXXXXXXXXX</code>).</p>
                         <div class="form-group">
                             <label for="settingsGaIdInput">GA4 Measurement ID</label>
                             <input type="text" id="settingsGaIdInput" class="form-control" placeholder="G-XXXXXXXXXX" value="{{ google_analytics_id }}">
                         </div>
-                        <button type="button" class="btn btn-primary btn-sm" onclick="saveAnalyticsSettings()">Save GA4 Connection</button>
+                        <button type="button" id="saveAnalyticsBtn" class="btn btn-primary btn-sm">Save GA4 Connection</button>
                     </div>
 
-                    <!-- Domain Email & SMTP Card -->
                     <div class="table-card" style="padding:1.75rem;">
-                        <h3 style="font-size:1.15rem;font-weight:700;color:#0f172a;margin-bottom:0.75rem;">3. Domain Email & SMTP Configuration</h3>
-                        <p style="font-size:0.88rem;color:#64748b;margin-bottom:1.25rem;">
-                            Set up professional domain email delivery for contact forms and order receipts.
-                        </p>
-
+                        <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:0.75rem;">3. Domain Email &amp; SMTP Worker</h3>
                         <div class="form-group">
                             <label for="settingsDomainEmailInput">Domain Email</label>
                             <input type="email" id="settingsDomainEmailInput" class="form-control" value="{{ domain_email }}">
                         </div>
                         <div class="form-grid-2">
                             <div class="form-group">
-                                <label for="settingsMailServerInput">SMTP Server</label>
-                                <input type="text" id="settingsMailServerInput" class="form-control" placeholder="smtp.suchitcatalog.com">
+                                <label for="settingsMailServerInput">SMTP Host</label>
+                                <input type="text" id="settingsMailServerInput" class="form-control" value="{{ mail_server }}">
                             </div>
                             <div class="form-group">
-                                <label for="settingsMailPortInput">Port</label>
-                                <input type="number" id="settingsMailPortInput" class="form-control" value="587">
+                                <label for="settingsMailPortInput">SMTP Port</label>
+                                <input type="number" id="settingsMailPortInput" class="form-control" value="{{ mail_port }}">
                             </div>
                         </div>
-                        <button type="button" class="btn btn-primary btn-sm" onclick="saveDomainEmailSettings()">Save Email Settings</button>
+                        <button type="button" id="saveEmailSettingsBtn" class="btn btn-primary btn-sm">Save Email Settings</button>
                     </div>
 
-                    <!-- Database Backup & Snapshot Center Card -->
                     <div class="table-card" style="padding:1.75rem;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-                            <h3 style="font-size:1.15rem;font-weight:700;color:#0f172a;">4. Database Backups</h3>
-                            <button type="button" class="btn btn-success btn-sm" onclick="triggerCreateBackup()">
-                                💾 Create Backup Now
-                            </button>
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">
+                            <h3 style="font-size:1.15rem;font-weight:700;">4. ACID Database Backups</h3>
+                            <button type="button" id="createBackupBtn" class="btn btn-success btn-sm">💾 Create Backup Now</button>
                         </div>
-                        <p style="font-size:0.88rem;color:#64748b;margin-bottom:1rem;">
-                            ACID-consistent SQLite database snapshots for zero data loss.
-                        </p>
+                        <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:1rem;">Online SQLite snapshots with integrity verification before restore.</p>
+                        <div id="backupsListContainer" style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;"></div>
+                    </div>
 
-                        <div id="backupsListContainer" style="max-height:180px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;">
-                            <div style="padding:0.75rem;text-align:center;color:var(--text-muted);font-size:0.85rem;">Loading backup snapshots...</div>
-                        </div>
+                    <div class="table-card" style="padding:1.75rem;">
+                        <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;">5. Email Worker Outbox</h3>
+                        <div id="adminOutboxList" style="max-height:180px;overflow-y:auto;">Loading...</div>
+                    </div>
+
+                    <div class="table-card" style="padding:1.75rem;">
+                        <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;">6. Customer Inquiries</h3>
+                        <div id="adminInquiriesList" style="max-height:180px;overflow-y:auto;">Loading...</div>
                     </div>
                 </div>
             </section>
-
-
-            <!-- ================================================================
-                 SECTION 7: API REFERENCE & DOCS
-                 ================================================================ -->
-            <section class="content-section" id="docsSection">
-                <div class="section-header-row">
-                    <div class="section-title-group">
-                        <h2>Suchit Developer API Reference</h2>
-                        <p>RESTful API endpoints available in the Suchit Catalog Engine for integrations</p>
-                    </div>
-                </div>
-
-                <div class="table-card" style="padding:1.75rem;">
-                    <div style="display:flex;flex-direction:column;gap:1.5rem;">
-                        <div style="border-bottom:1px solid #edf2f7;padding-bottom:1rem;">
-                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
-                                <span class="badge badge-category" style="background:#059669;">POST</span>
-                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/upload</code>
-                            </div>
-                            <p style="font-size:0.88rem;color:#64748b;">Upload a product image. Form fields: <code>image</code> (binary), <code>save_immediately</code> ('true'|'false'), <code>model</code>.</p>
-                        </div>
-
-                        <div style="border-bottom:1px solid #edf2f7;padding-bottom:1rem;">
-                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
-                                <span class="badge badge-category" style="background:#2563eb;">GET</span>
-                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/products</code>
-                            </div>
-                            <p style="font-size:0.88rem;color:#64748b;">Fetch all catalog products. Optional query parameters: <code>?search=...&category=...&brand=...&sort=...</code></p>
-                        </div>
-
-                        <div style="border-bottom:1px solid #edf2f7;padding-bottom:1rem;">
-                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
-                                <span class="badge badge-category" style="background:#059669;">POST</span>
-                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/api/checkout/process</code>
-                            </div>
-                            <p style="font-size:0.88rem;color:#64748b;">Process product order / commercial license checkout.</p>
-                        </div>
-
-                        <div style="border-bottom:1px solid #edf2f7;padding-bottom:1rem;">
-                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
-                                <span class="badge badge-category" style="background:#059669;">POST</span>
-                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/api/contact</code>
-                            </div>
-                            <p style="font-size:0.88rem;color:#64748b;">Submit customer support or commercial inquiry.</p>
-                        </div>
-
-                        <div>
-                            <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem;">
-                                <span class="badge badge-category" style="background:#2563eb;">GET</span>
-                                <code style="font-size:1rem;font-weight:700;color:#0f172a;">/export/pdf/&lt;id&gt;</code> &bull; <code style="font-size:1rem;font-weight:700;color:#0f172a;">/export/pdf</code>
-                            </div>
-                            <p style="font-size:0.88rem;color:#64748b;">Download single-product or full catalog PDF specification book.</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
+            {% endif %}
 
         </div>
     </main>
 
     <!-- ====================================================================
-         FLOATING WHATSAPP BUTTON (RESPONSIVE)
+         FLOATING WHATSAPP BUTTON
          ==================================================================== -->
-    <a href="https://wa.me/{{ whatsapp_number }}?text={{ whatsapp_message | urlencode }}" target="_blank" rel="noopener noreferrer" class="whatsapp-float-btn" title="Chat with Suchit Support on WhatsApp">
+    <a href="https://wa.me/{{ whatsapp_number | replace('+', '') }}?text={{ whatsapp_message | urlencode }}" target="_blank" rel="noopener noreferrer" class="whatsapp-float-btn" title="Chat with Suchit Support on WhatsApp">
         <div class="whatsapp-pulse-dot"></div>
         <svg viewBox="0 0 24 24">
             <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.771-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.634.053-.943-.046-.226-.071-.482-.164-.789-.296-1.341-.579-2.209-1.936-2.275-2.025-.067-.088-.542-.724-.542-1.381 0-.658.344-.981.467-1.112.122-.132.268-.165.357-.165.089 0 .178.002.256.006.082.004.192-.031.3.228.111.267.378.922.411.99.033.067.056.146.011.235-.044.09-.067.146-.133.224-.067.078-.141.174-.202.234-.067.067-.137.139-.059.273.078.133.348.574.747.93.513.457.947.599 1.08.666.133.067.211.056.289-.033.078-.09.334-.39.423-.523.089-.133.178-.112.3-.067.122.045.779.367.912.434.133.067.222.1.256.156.033.056.033.323-.111.728zM12 2C6.477 2 2 6.477 2 12c0 1.891.523 3.66 1.434 5.176L2 22l4.957-1.399C8.423 21.492 10.153 22 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/>
@@ -930,11 +760,9 @@
     <footer class="app-footer">
         <div class="app-container">
             <div class="footer-inner">
-                <div>
-                    <span class="footer-brand-note">Suchit Product Catalog Generator</span> &bull; Multimodal AI Engine &bull; v2.2.0
-                </div>
-                <div style="display:flex;align-items:center;gap:1.25rem;">
-                    <span onclick="openSecurityModal()" style="cursor:pointer;color:var(--success);font-weight:600;">🔒 SSL 256-Bit Encrypted</span>
+                <div><span class="footer-brand-note">Suchit Product Catalog Generator</span> &bull; Multimodal AI Engine &bull; v2.3.0</div>
+                <div style="display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;">
+                    <span data-action="open-security" style="cursor:pointer;color:var(--success);font-weight:600;">🔒 SSL 256-Bit Secured</span>
                     <a href="/export/pdf" download>Catalog PDF</a>
                     <a href="/export/csv" download>CSV Export</a>
                 </div>
@@ -945,61 +773,54 @@
     <!-- ====================================================================
          MODALS
          ==================================================================== -->
-    
-    <!-- Auth Modal (Sign In / Register / Verify Email) -->
     <div id="authModal" class="modal-overlay">
         <div class="modal-dialog" style="max-width:440px;">
             <div class="modal-header">
                 <h3 id="authModalTitle">Sign In to Suchit</h3>
-                <button type="button" class="modal-close-btn" onclick="closeAuthModal()">&times;</button>
+                <button type="button" class="modal-close-btn" data-close-modal="authModal">&times;</button>
             </div>
             <div class="modal-body">
-                <!-- Login Tab Form -->
-                <form id="loginForm" onsubmit="handleLoginSubmit(event)">
+                <form id="loginForm">
                     <div class="form-group">
                         <label for="loginIdentifier">Username or Email *</label>
-                        <input type="text" id="loginIdentifier" class="form-control" placeholder="admin or admin@suchitcatalog.com" required>
+                        <input type="text" id="loginIdentifier" class="form-control" placeholder="username or email" required>
                     </div>
                     <div class="form-group">
                         <label for="loginPassword">Password *</label>
                         <input type="password" id="loginPassword" class="form-control" placeholder="••••••••" required>
                     </div>
                     <button type="submit" class="btn btn-primary" style="width:100%;margin-top:0.75rem;">Sign In</button>
-                    
                     <div style="margin-top:1.25rem;text-align:center;font-size:0.85rem;color:var(--text-muted);">
-                        Don't have an account? <a href="#" onclick="toggleAuthForm('register')">Create one now</a>
+                        Don't have an account? <a href="#" data-switch-auth="register">Create one now</a>
                     </div>
                 </form>
 
-                <!-- Register Tab Form -->
-                <form id="registerForm" onsubmit="handleRegisterSubmit(event)" style="display:none;">
+                <form id="registerForm" style="display:none;">
                     <div class="form-group">
                         <label for="regUsername">Username *</label>
                         <input type="text" id="regUsername" class="form-control" placeholder="johndoe" required>
                     </div>
                     <div class="form-group">
                         <label for="regEmail">Email Address *</label>
-                        <input type="email" id="regEmail" class="form-control" placeholder="john@example.com" required>
+                        <input type="email" id="regEmail" class="form-control" placeholder="john@company.com" required>
                     </div>
                     <div class="form-group">
-                        <label for="regPassword">Password *</label>
-                        <input type="password" id="regPassword" class="form-control" placeholder="At least 6 characters" required>
+                        <label for="regPassword">Password (min 8 chars, letters + numbers) *</label>
+                        <input type="password" id="regPassword" class="form-control" placeholder="StrongPass123" required>
                     </div>
                     <button type="submit" class="btn btn-primary" style="width:100%;margin-top:0.75rem;">Create Account</button>
-                    
                     <div style="margin-top:1.25rem;text-align:center;font-size:0.85rem;color:var(--text-muted);">
-                        Already registered? <a href="#" onclick="toggleAuthForm('login')">Sign In</a>
+                        Already registered? <a href="#" data-switch-auth="login">Sign In</a>
                     </div>
                 </form>
 
-                <!-- Verify Email Form -->
-                <form id="verifyEmailForm" onsubmit="handleVerifyEmailSubmit(event)" style="display:none;">
+                <form id="verifyEmailForm" style="display:none;">
                     <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:1rem;">
-                        Enter the 6-digit verification code sent to your email to activate all permissions.
+                        Enter the 6-digit verification code dispatched by our mail worker.
                     </p>
                     <div class="form-group">
-                        <label for="verifyEmailCode">6-Digit Verification Code</label>
-                        <input type="text" id="verifyEmailCode" class="form-control" placeholder="123456" maxlength="6" style="text-align:center;font-size:1.4rem;letter-spacing:0.2em;" required>
+                        <label for="verifyEmailCode">6-Digit Code</label>
+                        <input type="text" id="verifyEmailCode" class="form-control" placeholder="000000" maxlength="6" style="text-align:center;font-size:1.4rem;letter-spacing:0.2em;" required>
                     </div>
                     <button type="submit" class="btn btn-success" style="width:100%;margin-top:0.75rem;">Verify Email</button>
                 </form>
@@ -1007,161 +828,115 @@
         </div>
     </div>
 
-    <!-- Product Quick-View Modal -->
     <div id="productViewModal" class="modal-overlay">
         <div class="modal-dialog">
             <div class="modal-header">
                 <h3 id="productViewModalTitle">Product Details</h3>
-                <button type="button" class="modal-close-btn" onclick="closeProductModal()">&times;</button>
+                <button type="button" class="modal-close-btn" data-close-modal="productViewModal">&times;</button>
             </div>
             <div class="modal-body" id="productViewModalBody"></div>
             <div class="modal-footer" style="flex-wrap:wrap;">
-                <button type="button" id="modalCheckoutBtn" class="btn btn-success btn-sm" onclick="openCheckoutForProduct()">
-                    💳 Order / License
-                </button>
-                <a id="modalPdfDownloadLink" href="#" class="btn btn-secondary btn-sm" download>
-                    Download PDF Spec
-                </a>
-                <button type="button" class="btn btn-primary btn-sm" onclick="closeProductModal()">Close</button>
+                <button type="button" id="modalCheckoutBtn" class="btn btn-success btn-sm">💳 Order / License</button>
+                <a id="modalPdfDownloadLink" href="#" class="btn btn-secondary btn-sm" download>Download PDF</a>
+                <button type="button" class="btn btn-primary btn-sm" data-close-modal="productViewModal">Close</button>
             </div>
         </div>
     </div>
 
-    <!-- Product Edit Modal -->
+    {% if current_user and current_user.role in ('admin', 'editor') %}
     <div id="productEditModal" class="modal-overlay">
         <div class="modal-dialog">
-            <form id="productEditForm" onsubmit="handleUpdateProductSubmit(event)">
+            <form id="productEditForm">
                 <div class="modal-header">
                     <h3>Edit Product Record</h3>
-                    <button type="button" class="modal-close-btn" onclick="closeEditModal()">&times;</button>
+                    <button type="button" class="modal-close-btn" data-close-modal="productEditModal">&times;</button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="editProductId">
-                    <div class="form-group">
-                        <label for="editProductName">Product Name *</label>
-                        <input type="text" id="editProductName" class="form-control" required>
+                    <div class="form-group"><label for="editProductName">Product Name *</label><input type="text" id="editProductName" class="form-control" required></div>
+                    <div class="form-grid-2">
+                        <div class="form-group"><label for="editBrand">Brand</label><input type="text" id="editBrand" class="form-control"></div>
+                        <div class="form-group"><label for="editModel">Model</label><input type="text" id="editModel" class="form-control"></div>
                     </div>
                     <div class="form-grid-2">
-                        <div class="form-group">
-                            <label for="editBrand">Brand</label>
-                            <input type="text" id="editBrand" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label for="editModel">Model</label>
-                            <input type="text" id="editModel" class="form-control">
-                        </div>
+                        <div class="form-group"><label for="editCategory">Category</label><input type="text" id="editCategory" class="form-control"></div>
+                        <div class="form-group"><label for="editPrice">Price</label><input type="text" id="editPrice" class="form-control"></div>
                     </div>
-                    <div class="form-grid-2">
-                        <div class="form-group">
-                            <label for="editCategory">Category</label>
-                            <input type="text" id="editCategory" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label for="editPrice">Price</label>
-                            <input type="text" id="editPrice" class="form-control">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="editDimensions">Dimensions</label>
-                        <input type="text" id="editDimensions" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label for="editShortDesc">Short Summary</label>
-                        <input type="text" id="editShortDesc" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label for="editDesc">Full Description</label>
-                        <textarea id="editDesc" class="form-control"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label for="editFeatures">Features (one per line)</label>
-                        <textarea id="editFeatures" class="form-control" style="min-height:80px;"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label for="editTags">Tags (comma-separated)</label>
-                        <input type="text" id="editTags" class="form-control">
-                    </div>
+                    <div class="form-group"><label for="editDimensions">Dimensions</label><input type="text" id="editDimensions" class="form-control"></div>
+                    <div class="form-group"><label for="editShortDesc">Short Summary</label><input type="text" id="editShortDesc" class="form-control"></div>
+                    <div class="form-group"><label for="editDesc">Full Description</label><textarea id="editDesc" class="form-control"></textarea></div>
+                    <div class="form-group"><label for="editFeatures">Features (one per line)</label><textarea id="editFeatures" class="form-control" style="min-height:80px;"></textarea></div>
+                    <div class="form-group"><label for="editTags">Tags (comma-separated)</label><input type="text" id="editTags" class="form-control"></div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+                    <button type="button" class="btn btn-secondary" data-close-modal="productEditModal">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Changes</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
     <div id="productDeleteModal" class="modal-overlay">
         <div class="modal-dialog" style="max-width:440px;">
             <div class="modal-header">
                 <h3 style="color:#dc2626;">Confirm Deletion</h3>
-                <button type="button" class="modal-close-btn" onclick="closeDeleteModal()">&times;</button>
+                <button type="button" class="modal-close-btn" data-close-modal="productDeleteModal">&times;</button>
             </div>
             <div class="modal-body">
-                <p>Are you sure you want to delete <b id="deleteProductName">this product</b> from your catalog?</p>
-                <p style="font-size:0.85rem;color:#64748b;margin-top:0.5rem;">This action cannot be undone and will permanently remove the record from your database.</p>
+                <p>Are you sure you want to delete <b id="deleteProductName">this product</b>?</p>
+                <p style="font-size:0.85rem;color:#64748b;margin-top:0.5rem;">This permanently deletes the SKU from the catalog database.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="closeDeleteModal()">Cancel</button>
-                <button type="button" class="btn btn-danger btn-sm" onclick="executeProductDeletion()">Delete Product</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-close-modal="productDeleteModal">Cancel</button>
+                <button type="button" id="confirmExecuteDeleteBtn" class="btn btn-danger btn-sm">Delete Product</button>
             </div>
         </div>
     </div>
+    {% endif %}
 
-    <!-- Security & SSL Padlock Modal -->
     <div id="securityModal" class="modal-overlay">
         <div class="modal-dialog" style="max-width:500px;">
             <div class="modal-header">
-                <h3 style="display:flex;align-items:center;gap:0.5rem;">
-                    <span>🔒</span> Verified Security & Encryption
-                </h3>
-                <button type="button" class="modal-close-btn" onclick="closeSecurityModal()">&times;</button>
+                <h3 style="display:flex;align-items:center;gap:0.5rem;"><span>🔒</span> Security Architecture</h3>
+                <button type="button" class="modal-close-btn" data-close-modal="securityModal">&times;</button>
             </div>
             <div class="modal-body">
-                <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.25rem;">
-                    <div style="width:48px;height:48px;border-radius:50%;background:var(--success-light);color:var(--success);display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0;">
-                        ✓
-                    </div>
-                    <div>
-                        <div style="font-weight:800;color:var(--text-primary);">256-Bit TLS End-to-End Encryption</div>
-                        <div style="font-size:0.82rem;color:var(--text-muted);">All catalog transfers and uploads are encrypted.</div>
-                    </div>
-                </div>
-
                 <div style="font-size:0.88rem;line-height:1.7;color:var(--text-secondary);background:var(--bg-subtle);padding:1rem;border-radius:var(--radius-sm);border:1px solid var(--border-color);">
-                    <div>• <b>API Key Protection:</b> Server-side encrypted storage; masked from client.</div>
-                    <div>• <b>Password Security:</b> Scrypt/PBKDF2 salted hash hashing.</div>
-                    <div>• <b>Content Security Policy:</b> Strict CSP & X-Frame-Options enforced.</div>
-                    <div>• <b>Media Sanitization:</b> EXIF auto-transposition & file verification.</div>
+                    <div>&bull; <b>Opaque Server Sessions:</b> High-entropy CSPRNG tokens; zero client role claims.</div>
+                    <div>&bull; <b>CSRF Protection:</b> HMAC-SHA256 tokens + Origin enforcement on all mutations.</div>
+                    <div>&bull; <b>Authoritative Checkout:</b> Server-side DB lookup, Decimal tax &amp; Luhn card validation.</div>
+                    <div>&bull; <b>Strict CSP &amp; EXIF Scrubbing:</b> Zero inline scripts; sanitized uploaded media.</div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-primary btn-sm" onclick="closeSecurityModal()">Understood</button>
+                <button type="button" class="btn btn-primary btn-sm" data-close-modal="securityModal">Close</button>
             </div>
         </div>
     </div>
 
-    <!-- Order Confirmation Receipt Modal -->
     <div id="orderConfirmationModal" class="modal-overlay">
         <div class="modal-dialog" style="max-width:480px;">
             <div class="modal-header">
-                <h3 style="color:var(--success);display:flex;align-items:center;gap:0.4rem;">
-                    <span>✓</span> Order Confirmed!
-                </h3>
-                <button type="button" class="modal-close-btn" onclick="closeOrderModal()">&times;</button>
+                <h3 style="color:var(--success);display:flex;align-items:center;gap:0.4rem;"><span>✓</span> Order Verified!</h3>
+                <button type="button" class="modal-close-btn" data-close-modal="orderConfirmationModal">&times;</button>
             </div>
             <div class="modal-body" id="orderConfirmationModalBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">Print Receipt</button>
-                <button type="button" class="btn btn-primary btn-sm" onclick="closeOrderModal()">Continue Browsing</button>
+                <button type="button" id="printReceiptBtn" class="btn btn-secondary btn-sm">Print Receipt</button>
+                <button type="button" class="btn btn-primary btn-sm" data-close-modal="orderConfirmationModal">Done</button>
             </div>
         </div>
     </div>
 
-    <!-- Toast Notification Container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <!-- Application Script -->
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <!-- Role-Gated Modular JS Bundles -->
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+    {% if current_user and current_user.role in ('admin', 'editor') %}
+    <script src="/static/js/editor.js" defer></script>
+    {% endif %}
+    {% if current_user and current_user.role == 'admin' %}
+    <script src="/static/js/admin.js" defer></script>
+    {% endif %}
 </body>
 </html>

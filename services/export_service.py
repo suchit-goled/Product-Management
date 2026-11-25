@@ -1,74 +1,41 @@
 """
 Suchit Catalog - Export Service
-Handles CSV and JSON exports with proper character encoding (UTF-8 with BOM for Excel),
-clean delimiters, and structured metadata.
+Handles CSV and JSON exports with UTF-8 BOM encoding, RFC 4180 quoting,
+and Spreadsheet Formula / DDE Injection mitigation across every CSV cell.
 """
 import csv
 import io
 import json
 import datetime
+from services.security_service import sanitize_csv_cell
 
 
 def export_products_csv(products: list) -> bytes:
-    """
-    Exports a list of product dictionaries to CSV bytes with UTF-8 BOM encoding.
-    Ensures complex fields (features, specifications, selling points, tags) are
-    formatted cleanly for spreadsheet viewing and editing.
-    """
+    """Exports products to RFC 4180 CSV with UTF-8 BOM and formula injection protection."""
     output = io.StringIO()
     writer = csv.writer(output, quoting=csv.QUOTE_ALL)
 
     headers = [
-        "ID",
-        "Product Name",
-        "Brand",
-        "Model",
-        "Category",
-        "Price",
-        "Dimensions",
-        "Short Description",
-        "Description",
-        "Features",
-        "Specifications",
-        "Selling Points",
-        "Tags",
-        "SEO Title",
-        "SEO Description",
-        "Image Path",
-        "Created At"
+        "ID", "Product Name", "Brand", "Model", "Category", "Price", "Dimensions",
+        "Short Description", "Description", "Features", "Specifications",
+        "Selling Points", "Tags", "SEO Title", "SEO Description", "Image Path", "Created At"
     ]
     writer.writerow(headers)
 
     for p in products:
-        # Format features as newline-separated bullet list
         features = p.get("features", [])
-        if isinstance(features, list):
-            feat_str = "\n".join(f"• {f}" for f in features)
-        else:
-            feat_str = str(features or "")
+        feat_str = "\n".join(f"• {f}" for f in features) if isinstance(features, list) else str(features or "")
 
-        # Format specs as key: value lines
         specs = p.get("specifications", {})
-        if isinstance(specs, dict):
-            specs_str = "\n".join(f"{k}: {v}" for k, v in specs.items())
-        else:
-            specs_str = str(specs or "")
+        specs_str = "\n".join(f"{k}: {v}" for k, v in specs.items()) if isinstance(specs, dict) else str(specs or "")
 
-        # Format selling points
         usp = p.get("selling_points", [])
-        if isinstance(usp, list):
-            usp_str = "\n".join(f"✓ {u}" for u in usp)
-        else:
-            usp_str = str(usp or "")
+        usp_str = "\n".join(f"✓ {u}" for u in usp) if isinstance(usp, list) else str(usp or "")
 
-        # Format tags
         tags = p.get("tags", [])
-        if isinstance(tags, list):
-            tags_str = ", ".join(tags)
-        else:
-            tags_str = str(tags or "")
+        tags_str = ", ".join(tags) if isinstance(tags, list) else str(tags or "")
 
-        row = [
+        raw_row = [
             p.get("id", ""),
             p.get("product_name", ""),
             p.get("brand", ""),
@@ -87,18 +54,17 @@ def export_products_csv(products: list) -> bytes:
             p.get("image_path", ""),
             p.get("created_at", "")
         ]
-        writer.writerow(row)
+        writer.writerow([sanitize_csv_cell(cell) for cell in raw_row])
 
-    # Encode with utf-8-sig so Excel recognizes UTF-8 (e.g. ₹ rupee symbol)
     return output.getvalue().encode("utf-8-sig")
 
 
 def export_products_json(products: list) -> str:
-    """Exports products as a formatted JSON document with catalog metadata."""
+    """Exports products as formatted JSON feed with catalog metadata."""
     payload = {
         "catalog_name": "Suchit Product Catalog",
         "export_timestamp": datetime.datetime.now().isoformat(),
-        "total_products": len(products),
+        "total_items": len(products),
         "products": products
     }
     return json.dumps(payload, indent=2, ensure_ascii=False)

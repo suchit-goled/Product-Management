@@ -6,6 +6,7 @@ using ReportLab with custom typography, clean tables, images, and Suchit brandin
 import os
 import io
 import datetime
+from xml.sax.saxutils import escape as xml_escape
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.units import inch
@@ -167,13 +168,13 @@ def _build_product_story(product: dict, styles: dict, base_dir: str = None) -> l
     """Builds flowable elements for a single product catalog sheet."""
     story = []
 
-    pname = product.get("product_name") or "Unnamed Product"
-    brand = product.get("brand") or "Unspecified Brand"
-    category = product.get("category") or "General"
-    price = product.get("price") or "N/A"
-    dim = product.get("dimensions") or "N/A"
-    short_desc = product.get("short_description") or ""
-    desc = product.get("description") or ""
+    pname = xml_escape(str(product.get("product_name") or "Unnamed Product"))
+    brand = xml_escape(str(product.get("brand") or "Unspecified Brand"))
+    category = xml_escape(str(product.get("category") or "General"))
+    price = xml_escape(str(product.get("price") or "N/A"))
+    dim = xml_escape(str(product.get("dimensions") or "N/A"))
+    short_desc = xml_escape(str(product.get("short_description") or ""))
+    desc = xml_escape(str(product.get("description") or ""))
     features = product.get("features") or []
     specs = product.get("specifications") or {}
     usp = product.get("selling_points") or []
@@ -227,7 +228,7 @@ def _build_product_story(product: dict, styles: dict, base_dir: str = None) -> l
         [Paragraph("<b>Status:</b>", styles['Body']), Paragraph(f"Active Catalog Item", styles['BodyMuted'])],
     ]
     if product.get('model'):
-        right_meta.insert(1, [Paragraph("<b>Model:</b>", styles['Body']), Paragraph(str(product['model']), styles['Body'])])
+        right_meta.insert(1, [Paragraph("<b>Model:</b>", styles['Body']), Paragraph(xml_escape(str(product['model'])), styles['Body'])])
 
     meta_table = Table(right_meta, colWidths=[1.1*inch, 3.2*inch])
     meta_table.setStyle(TableStyle([
@@ -272,7 +273,7 @@ def _build_product_story(product: dict, styles: dict, base_dir: str = None) -> l
     if features:
         story.append(Paragraph("Key Features & Capabilities", styles['SectionHeading']))
         for feat in features:
-            story.append(Paragraph(f"• &nbsp; {feat}", styles['Bullet']))
+            story.append(Paragraph(f"• &nbsp; {xml_escape(str(feat))}", styles['Bullet']))
         story.append(Spacer(1, 6))
 
     # Technical Specifications Table
@@ -281,10 +282,9 @@ def _build_product_story(product: dict, styles: dict, base_dir: str = None) -> l
         spec_rows = [[Paragraph("Attribute", styles['TableHeader']), Paragraph("Specification Details", styles['TableHeader'])]]
         
         for idx, (k, v) in enumerate(specs.items()):
-            row_bg = colors.white if idx % 2 == 0 else BG_LIGHT
             spec_rows.append([
-                Paragraph(f"<b>{k}</b>", styles['TableCell']),
-                Paragraph(str(v), styles['TableCell'])
+                Paragraph(f"<b>{xml_escape(str(k))}</b>", styles['TableCell']),
+                Paragraph(xml_escape(str(v)), styles['TableCell'])
             ])
 
         spec_table = Table(spec_rows, colWidths=[2.2*inch, 4.8*inch])
@@ -306,12 +306,12 @@ def _build_product_story(product: dict, styles: dict, base_dir: str = None) -> l
     if usp:
         story.append(Paragraph("Commercial Selling Highlights", styles['SectionHeading']))
         for point in usp:
-            story.append(Paragraph(f"✓ &nbsp; <b>{point}</b>", styles['Bullet']))
+            story.append(Paragraph(f"✓ &nbsp; <b>{xml_escape(str(point))}</b>", styles['Bullet']))
         story.append(Spacer(1, 6))
 
     # Search Tags & SEO
     if tags:
-        tag_str = ", ".join(tags)
+        tag_str = ", ".join(xml_escape(str(t)) for t in tags)
         story.append(Paragraph(f"<b>Search & Catalog Keywords:</b> {tag_str}", styles['BodyMuted']))
 
     return story
@@ -397,10 +397,10 @@ def generate_catalog_pdf(products: list, base_dir: str = None) -> bytes:
             Paragraph("Price", styles['TableHeader'])
         ]]
         for idx, p in enumerate(products):
-            pname = p.get('product_name', 'Unnamed')
-            pbrand = p.get('brand', 'Unspecified')
-            pcat = p.get('category', 'General')
-            pprice = p.get('price', '-')
+            pname = xml_escape(str(p.get('product_name', 'Unnamed')))
+            pbrand = xml_escape(str(p.get('brand', 'Unspecified')))
+            pcat = xml_escape(str(p.get('category', 'General')))
+            pprice = xml_escape(str(p.get('price', '-')))
             pid = f"#{p.get('id', idx+1)}"
             summary_rows.append([
                 Paragraph(pid, styles['TableCell']),

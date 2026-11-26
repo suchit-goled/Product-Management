@@ -1,5 +1,5 @@
 """
-Authenticated CLI client for Suchit Catalog Image Upload.
+Authenticated CLI client for Product Catalog Image Upload.
 Signs into session, retrieves CSRF token, and performs an authorized upload.
 """
 import sys
@@ -10,9 +10,12 @@ from PIL import Image
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
-BASE_URL = os.getenv("SUCHIT_URL", "http://127.0.0.1:5000")
-USERNAME = os.getenv("SUCHIT_USER", "editor")
-PASSWORD = os.getenv("SUCHIT_PASS", "Editor@12345")
+BASE_URL = os.getenv("CATALOG_URL", "http://127.0.0.1:5000")
+USERNAME = os.getenv("CATALOG_USER", "editor")
+PASSWORD = os.getenv("CATALOG_PASS", "")
+if not PASSWORD:
+    print("Error: Set CATALOG_PASS environment variable before running upload.py")
+    sys.exit(1)
 
 session = requests.Session()
 # Obtain guest CSRF token from login page / auth endpoint
@@ -34,7 +37,7 @@ image_path = sys.argv[1] if len(sys.argv) > 1 else None
 temp_created = False
 if not image_path or not os.path.exists(image_path):
     print("Creating temporary test image...")
-    image_path = "temp_suchit_upload_sample.jpg"
+    image_path = "temp_catalog_upload_sample.jpg"
     Image.new("RGB", (400, 400), color=(37, 99, 235)).save(image_path, "JPEG")
     temp_created = True
 

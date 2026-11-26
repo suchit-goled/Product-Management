@@ -1,5 +1,5 @@
 """
-Suchit - AI Product Catalog Generator
+Product Catalog
 Layered Enterprise Architecture:
   Client -> CDN (Static/WebP Edge) -> Load Balancer (ProxyFix/TLS/Rate-Limit/CORS/CSRF)
   -> App Servers (Stateless Auth/RBAC + BFF Gateway + REST Engine)
@@ -18,18 +18,17 @@ from flask import (
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
-from dotenv import set_key
 
 from config import Config
 import database
-from services import cache_service, queue_service, security_service, worker_service, backup_service
+from services import cache_service, queue_service, security_service, worker_service, backup_service, groq_service
 from services.image_service import validate_and_save_image
-from services.gemini_service import analyze_product_image, test_gemini_connection
+from services.gemini_service import analyze_product_image, generate_catalog_from_prompt_gemini
 from services.pdf_service import generate_single_product_pdf, generate_catalog_pdf
 from services.export_service import export_products_csv, export_products_json
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-logger = logging.getLogger("suchit.app")
+logger = logging.getLogger("product_catalog.app")
 
 BASE_DIR = Config.BASE_DIR
 template_folder = os.path.join(BASE_DIR, "templates")
@@ -42,8 +41,9 @@ app = Flask(
 )
 app.config.from_object(Config)
 
-# Load Balancer / Reverse Proxy Support (X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+# Load Balancer / Reverse Proxy Support (strictly opt-in via TRUST_PROXY=True to prevent header spoofing)
+if Config.TRUST_PROXY:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 # Strict CORS restricted to explicit configured origins (never wildcard with credentials)
 CORS(
@@ -86,20 +86,24 @@ def _resolve_session_and_user():
     return sess, user
 
 
-def mask_secret(secret_str: str) -> str:
-    """Masks sensitive API keys for Admin diagnostics only."""
-    if not secret_str or len(secret_str) < 8:
-        return "Not configured"
-    return f"{secret_str[:6]}...{'*' * 8}...{secret_str[-4:]}"
-
-
 def _sanitize_public_product(p: dict, include_internal: bool = False) -> dict:
-    """Prevents leaking internal processing markers to unauthenticated public shoppers."""
+    """Prevents leaking internal processing markers, statuses, and audit timestamps to public shoppers."""
     clean = dict(p)
     if not include_internal:
-        src = (clean.get("extraction_source") or "").lower()
-        clean["extraction_source"] = "ai" if ("gemini" in src or src == "ai") else "verified"
+        for internal_field in ("extraction_source", "status", "created_at", "updated_at"):
+            clean.pop(internal_field, None)
     return clean
+
+
+def _public_user_projection(user: dict) -> dict:
+    """Safe frontend user projection (never leaks email, internal numeric id, or hashes)."""
+    if not user:
+        return None
+    return {
+        "username": user.get("username"),
+        "role": user.get("role"),
+        "is_verified": bool(user.get("is_verified")),
+    }
 
 
 # ==============================================================================
@@ -122,14 +126,23 @@ def load_balancer_security_gate():
 
     # Protect all state-changing HTTP methods from Cross-Site Request Forgery
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
-        # 1. Origin check when Origin header is sent by browser
+        host_origin = f"{request.scheme}://{request.host}"
+        allowed = set(Config.ALLOWED_ORIGINS) | {host_origin}
+
+        # 1. Origin / Referer check when sent by browser
         origin = request.headers.get("Origin")
         if origin:
-            host_origin = f"{request.scheme}://{request.host}"
-            allowed = set(Config.ALLOWED_ORIGINS) | {host_origin}
             if origin not in allowed:
                 logger.warning(f"Blocked cross-origin mutation from {origin} to {request.path}")
                 return jsonify({"error": "Forbidden", "message": "Cross-origin request rejected"}), 403
+        else:
+            referer = request.headers.get("Referer")
+            if referer:
+                parsed_ref = urlparse(referer)
+                ref_origin = f"{parsed_ref.scheme}://{parsed_ref.netloc}" if parsed_ref.scheme and parsed_ref.netloc else ""
+                if ref_origin not in allowed:
+                    logger.warning(f"Blocked cross-referer mutation from {ref_origin} to {request.path}")
+                    return jsonify({"error": "Forbidden", "message": "Cross-origin request rejected"}), 403
 
         # 2. Enforce constant-time CSRF token validation for all state-changing routes
         provided_csrf = (
@@ -152,35 +165,43 @@ def load_balancer_security_gate():
 
 @app.after_request
 def apply_security_and_cdn_headers(response):
-    """Applies strict Load Balancer / CDN security & caching headers."""
+    """Applies strict Load Balancer / CDN security & caching headers (zero external tracking)."""
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "img-src 'self' data: blob:; "
-        "script-src 'self' https://www.googletagmanager.com; "
+        "script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; "
         "font-src 'self' data:; "
-        "connect-src 'self' https://www.google-analytics.com https://analytics.google.com; "
+        "connect-src 'self'; "
         "object-src 'none'; "
         "base-uri 'self'; "
+        "form-action 'self'; "
         "frame-ancestors 'self';"
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
 
     if request.is_secure or request.headers.get("X-Forwarded-Proto", "").lower() == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
-    # CDN edge cache rules vs Private dynamic endpoints
+    # CDN edge cache rules vs Private dynamic endpoints & HTML containing CSRF/session state
     if request.path.startswith("/static/uploads/") and response.status_code == 200:
         response.headers["Cache-Control"] = f"public, max-age={Config.CDN_STATIC_MAX_AGE}, immutable"
         response.headers["Vary"] = "Accept"
     elif request.path.startswith(("/static/css/", "/static/js/app.js")) and response.status_code == 200:
         response.headers["Cache-Control"] = "public, max-age=3600"
-    elif request.path.startswith(("/api/", "/gw/", "/product", "/upload", "/static/js/admin.js", "/static/js/editor.js")):
+    elif (
+        request.path == "/"
+        or response.status_code >= 400
+        or request.path.startswith(("/api/", "/gw/", "/product", "/upload", "/export/", "/static/js/admin.js", "/static/js/editor.js"))
+    ):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
         response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
 
     return response
 
@@ -296,7 +317,7 @@ def serve_admin_bundle():
 
 @app.route('/')
 def home():
-    """Server-side renders role-gated workspace without leaking internal APIs or admin DOM."""
+    """Server-side renders role-gated workspace without leaking internal APIs, keys, SMTP, or PII."""
     stats = database.get_catalog_stats()
     # Public stats never expose internal admin order/inquiry counts
     public_stats = {
@@ -310,14 +331,11 @@ def home():
         app_name=Config.APP_NAME,
         app_version=Config.APP_VERSION,
         stats=public_stats,
-        current_user=g.current_user,
+        current_user=_public_user_projection(g.current_user),
         csrf_token=g.csrf_token,
-        google_analytics_id=Config.GOOGLE_ANALYTICS_ID,
         whatsapp_number=Config.WHATSAPP_NUMBER,
         whatsapp_message=Config.WHATSAPP_MESSAGE,
         domain_email=Config.DOMAIN_EMAIL,
-        mail_server=Config.MAIL_SERVER,
-        mail_port=Config.MAIL_PORT,
     )
 
 
@@ -333,9 +351,9 @@ def page_not_found(e):
         return jsonify({
             "error": "Not Found",
             "status": 404,
-            "message": f"Resource '{request.path}' was not found."
+            "message": "The requested resource was not found."
         }), 404
-    return render_template('404.html', requested_path=request.path), 404
+    return render_template('404.html'), 404
 
 
 @app.errorhandler(500)
@@ -356,7 +374,7 @@ def internal_server_error(e):
 def forbidden(e):
     if request.path.startswith(('/api/', '/gw/')) or request.is_json:
         return jsonify({"error": "Forbidden", "status": 403, "message": "Access denied."}), 403
-    return render_template('404.html', requested_path=request.path), 403
+    return render_template('404.html'), 403
 
 
 @app.errorhandler(401)
@@ -383,8 +401,8 @@ def auth_register():
         # Public registration strictly forces viewer role & unverified status
         res = database.create_user(username, email, password, allow_elevated_role=None, is_verified=0)
         if not res.get("success"):
-            status_code = 409 if "already exists" in res.get("message", "").lower() else 400
-            return jsonify(res), status_code
+            status_code = 409 if res.get("conflict") else 400
+            return jsonify({"success": False, "message": res.get("message", "Registration failed")}), status_code
 
         # Trigger immediate async worker pass for verification delivery without stalling caller
         worker_service.process_pending_once(max_jobs=2)
@@ -400,8 +418,15 @@ def auth_register():
             user_agent=request.headers.get("User-Agent", "")
         )
 
-        payload = dict(res)
-        payload["csrf_token"] = csrf_tok
+        # Never expose raw user_id or email PII back to frontend JSON
+        payload = {
+            "success": True,
+            "username": res["username"],
+            "role": res["role"],
+            "is_verified": res["is_verified"],
+            "message": res["message"],
+            "csrf_token": csrf_tok,
+        }
         resp = make_response(jsonify(payload), 201)
         resp.set_cookie(
             Config.SESSION_COOKIE_NAME,
@@ -449,7 +474,7 @@ def auth_login():
             "authenticated": True,
             "csrf_token": csrf_tok,
             "message": f"Welcome back, {user['username']}!",
-            "user": user
+            "user": _public_user_projection(user)
         }), 200)
         resp.set_cookie(
             Config.SESSION_COOKIE_NAME,
@@ -475,7 +500,12 @@ def auth_logout():
         "authenticated": False,
         "message": "Signed out securely"
     }), 200)
-    resp.delete_cookie(Config.SESSION_COOKIE_NAME)
+    resp.delete_cookie(
+        Config.SESSION_COOKIE_NAME,
+        httponly=True,
+        samesite=Config.SESSION_COOKIE_SAMESITE,
+        secure=Config.SESSION_COOKIE_SECURE
+    )
     return resp
 
 
@@ -485,7 +515,7 @@ def auth_me():
     if g.current_user:
         return jsonify({
             "authenticated": True,
-            "user": g.current_user,
+            "user": _public_user_projection(g.current_user),
             "csrf_token": g.csrf_token
         })
     return jsonify({
@@ -497,17 +527,16 @@ def auth_me():
 
 @app.route('/gw/auth/verify-email', methods=['POST'])
 @app.route('/api/auth/verify-email', methods=['POST'])
+@login_required
 @rate_limit_guard("verify_otp", max_requests=10, window_seconds=300)
 def auth_verify_email():
     try:
         data = request.get_json() or {}
         code = data.get("code", "")
-        identifier = (g.current_user["id"] if g.current_user else None) or data.get("email")
+        if not code:
+            return jsonify({"success": False, "message": "6-digit verification code is required"}), 400
 
-        if not identifier or not code:
-            return jsonify({"success": False, "message": "User session/email and 6-digit code are required"}), 400
-
-        verified, msg = database.verify_user_code(identifier, code)
+        verified, msg = database.verify_user_code(int(g.current_user["id"]), code)
         if verified:
             return jsonify({"success": True, "message": msg}), 200
         return jsonify({"success": False, "message": msg}), 400
@@ -591,12 +620,14 @@ def export_csv():
         category = request.args.get('category')
         brand = request.args.get('brand')
         products = database.get_products(category=category, brand=brand)
-        csv_bytes = export_products_csv(products)
+        is_staff = bool(g.current_user and g.current_user.get("role") in ("admin", "editor"))
+        sanitized = [_sanitize_public_product(p, include_internal=is_staff) for p in products]
+        csv_bytes = export_products_csv(sanitized)
         return send_file(
             io.BytesIO(csv_bytes),
             mimetype="text/csv",
             as_attachment=True,
-            download_name="suchit_product_catalog.csv"
+            download_name="product_catalog.csv"
         )
     except Exception as e:
         logger.error(f"Error exporting CSV: {e}", exc_info=True)
@@ -616,7 +647,7 @@ def export_json():
             io.BytesIO(json_str.encode('utf-8')),
             mimetype="application/json",
             as_attachment=True,
-            download_name="suchit_product_catalog.json"
+            download_name="product_catalog.json"
         )
     except Exception as e:
         logger.error(f"Error exporting JSON: {e}", exc_info=True)
@@ -629,9 +660,11 @@ def export_product_pdf(product_id):
         product = database.get_product_by_id(product_id)
         if not product:
             return jsonify({"error": "Product Not Found"}), 404
-        pdf_bytes = generate_single_product_pdf(product, base_dir=Config.BASE_DIR)
+        is_staff = bool(g.current_user and g.current_user.get("role") in ("admin", "editor"))
+        sanitized = _sanitize_public_product(product, include_internal=is_staff)
+        pdf_bytes = generate_single_product_pdf(sanitized, base_dir=Config.BASE_DIR)
         clean_name = secure_filename(product.get('product_name', 'product'))[:30] or "product"
-        filename = f"suchit_{clean_name}_{product_id}.pdf"
+        filename = f"product_{clean_name}_{product_id}.pdf"
         return send_file(
             io.BytesIO(pdf_bytes),
             mimetype="application/pdf",
@@ -649,12 +682,14 @@ def export_catalog_pdf():
         category = request.args.get('category')
         brand = request.args.get('brand')
         products = database.get_products(category=category, brand=brand)
-        pdf_bytes = generate_catalog_pdf(products, base_dir=Config.BASE_DIR)
+        is_staff = bool(g.current_user and g.current_user.get("role") in ("admin", "editor"))
+        sanitized = [_sanitize_public_product(p, include_internal=is_staff) for p in products]
+        pdf_bytes = generate_catalog_pdf(sanitized, base_dir=Config.BASE_DIR)
         return send_file(
             io.BytesIO(pdf_bytes),
             mimetype="application/pdf",
             as_attachment=True,
-            download_name="suchit_complete_catalog.pdf"
+            download_name="product_catalog.pdf"
         )
     except Exception as e:
         logger.error(f"Error generating catalog PDF: {e}", exc_info=True)
@@ -684,12 +719,18 @@ def upload_image():
         if err:
             return jsonify({"error": err}), 400
 
-        allowed_models = {"gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"}
-        selected_model = request.form.get("model", "gemini-2.5-flash")
-        if selected_model not in allowed_models:
-            selected_model = "gemini-2.5-flash"
+        allowed_vision_models = set(groq_service.GROQ_VISION_MODELS) | {
+            "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"
+        }
+        default_model = Config.GROQ_VISION_MODEL if groq_service.is_groq_configured() else "gemini-2.5-flash"
+        selected_model = request.form.get("model") or default_model
+        if selected_model not in allowed_vision_models:
+            selected_model = default_model
 
-        extracted_data = analyze_product_image(absolute_path, model_name=selected_model)
+        if selected_model in groq_service.GROQ_VISION_MODELS:
+            extracted_data = groq_service.analyze_product_image_groq(absolute_path, model_name=selected_model)
+        else:
+            extracted_data = analyze_product_image(absolute_path, model_name=selected_model)
         extracted_data["image_path"] = relative_url
 
         save_immediately = request.form.get("save_immediately", "true").lower() in ("true", "1", "yes")
@@ -714,6 +755,75 @@ def upload_image():
     except Exception as e:
         logger.error(f"Error in upload_image: {e}", exc_info=True)
         return jsonify({"error": "Failed to process upload"}), 500
+
+
+@app.route('/gw/studio/generate', methods=['POST'])
+@app.route('/api/catalog/generate', methods=['POST'])
+@role_required(["admin", "editor"])
+@rate_limit_guard("generate", max_requests=25, window_seconds=300)
+def generate_catalog_from_prompt():
+    """Generates a structured catalog entry from a product brief using Groq (or Gemini fallback)."""
+    try:
+        data = request.get_json() or {}
+        prompt_text = security_service.sanitize_text_field(data.get("prompt"), 2000)
+        if not prompt_text or len(prompt_text) < 3:
+            return jsonify({"error": "Please enter at least 3 characters describing the product."}), 400
+
+        brand_hint = security_service.sanitize_text_field(data.get("brand"), 120)
+        category_hint = security_service.sanitize_text_field(data.get("category"), 100)
+        price_hint = security_service.sanitize_text_field(data.get("price"), 60)
+
+        allowed_text_models = set(groq_service.GROQ_TEXT_MODELS) | {
+            "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"
+        }
+        default_model = Config.GROQ_TEXT_MODEL
+        selected_model = (data.get("model") or default_model).strip()
+        if selected_model not in allowed_text_models:
+            selected_model = default_model
+
+        if selected_model.startswith("gemini-"):
+            draft = generate_catalog_from_prompt_gemini(prompt_text, model_name=selected_model)
+            if not draft:
+                draft = groq_service.generate_catalog_from_prompt_groq(
+                    prompt_text,
+                    brand_hint=brand_hint,
+                    category_hint=category_hint,
+                    price_hint=price_hint,
+                    model_name=Config.GROQ_TEXT_MODEL,
+                )
+        else:
+            draft = groq_service.generate_catalog_from_prompt_groq(
+                prompt_text,
+                brand_hint=brand_hint,
+                category_hint=category_hint,
+                price_hint=price_hint,
+                model_name=selected_model,
+            )
+
+        if brand_hint and (not draft.get("brand") or draft.get("brand") == "Unspecified Brand"):
+            draft["brand"] = brand_hint
+        if category_hint and (not draft.get("category") or draft.get("category") == "General Merchandise"):
+            draft["category"] = category_hint
+        if price_hint and (not draft.get("price") or draft.get("price") == "Not Available"):
+            draft["price"] = price_hint
+
+        save_immediately = bool(data.get("save_immediately", False))
+        if save_immediately:
+            product_id = database.insert_product(draft)
+            saved_product = database.get_product_by_id(product_id)
+            resp = {"message": "Product Generated & Added Successfully", "product": saved_product}
+            if draft.get("warning"):
+                resp["warning"] = draft["warning"]
+            return jsonify(resp), 201
+
+        return jsonify({
+            "message": "Catalog draft generated successfully. Ready for review.",
+            "draft": draft,
+            "warning": draft.get("warning"),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error in generate_catalog_from_prompt: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate catalog draft"}), 500
 
 
 @app.route('/gw/catalog/item', methods=['POST'])
@@ -809,30 +919,32 @@ def process_checkout():
 @app.route('/api/checkout/orders', methods=['GET'])
 @login_required
 def get_orders_list():
-    """Admins & Editors see catalog orders; Viewers see strictly their own orders."""
+    """Users (including Editors) see strictly their own non-PII orders; Admins see redacted catalog order summaries."""
     role = g.current_user.get("role")
-    if role in ("admin", "editor"):
+    if role == "admin":
         return jsonify(database.get_orders())
     return jsonify(database.get_orders(user_id=g.current_user["id"]))
 
 
 # ==============================================================================
-# ADMIN CONSOLE (STRICT Administrator Role ONLY)
+# ADMIN CONSOLE (STRICT Administrator Role ONLY - ZERO Keys or Raw PII Shipped)
 # ==============================================================================
 
 @app.route('/gw/admin/inquiries', methods=['GET'])
 @app.route('/api/inquiries', methods=['GET'])
 @role_required(["admin"])
 def get_inquiries_list():
-    return jsonify(database.get_inquiries())
+    """Returns redacted inquiry ticket metadata without leaking customer PII to frontend."""
+    return jsonify(database.get_inquiries_summary())
 
 
 @app.route('/gw/admin/outbox', methods=['GET'])
 @role_required(["admin"])
 def get_admin_outbox():
+    """Returns queue metrics & redacted delivery status logs (never exposes recipient emails or bodies)."""
     return jsonify({
         "queue": queue_service.get_queue_metrics(),
-        "outbox": queue_service.get_recent_outbox(limit=25)
+        "outbox": queue_service.get_recent_outbox_summary(limit=25)
     })
 
 
@@ -840,7 +952,17 @@ def get_admin_outbox():
 @app.route('/api/backups', methods=['GET'])
 @role_required(["admin"])
 def list_backups_route():
-    return jsonify(backup_service.list_backups())
+    """Lists server-side snapshot metadata without exposing raw downloadable DB files."""
+    backups = backup_service.list_backups()
+    return jsonify([
+        {
+            "created_at": b.get("created_at"),
+            "size_formatted": b.get("size_formatted"),
+            "product_count": b.get("product_count"),
+            "storage": "server_only",
+        }
+        for b in backups
+    ])
 
 
 @app.route('/gw/admin/backups/create', methods=['POST'])
@@ -848,36 +970,51 @@ def list_backups_route():
 @role_required(["admin"])
 def create_backup_route():
     res = backup_service.create_backup(label="manual")
-    return jsonify(res), (200 if res.get("success") else 500)
+    if res.get("success"):
+        return jsonify({
+            "success": True,
+            "size_formatted": res.get("size_formatted"),
+            "product_count": res.get("product_count"),
+            "created_at": res.get("created_at"),
+            "message": "Server-side database snapshot created securely."
+        }), 200
+    return jsonify({"success": False, "message": "Backup creation failed"}), 500
 
 
 @app.route('/gw/admin/backups/download/<path:filename>', methods=['GET'])
 @app.route('/api/backups/download/<path:filename>', methods=['GET'])
 @role_required(["admin"])
 def download_backup_route(filename):
+    """Path-checked and strictly disabled to prevent bulk credential/PII SQLite DB exfiltration over HTTP."""
     ok, backup_path = security_service.is_safe_contained_path(Config.BACKUP_FOLDER, filename)
     clean_filename = os.path.basename(filename or "")
-    if ok and clean_filename.endswith(".db") and os.path.isfile(backup_path):
-        return send_file(backup_path, as_attachment=True, download_name=clean_filename)
-    return jsonify({"error": "Backup file not found"}), 404
+    if not ok or not clean_filename.endswith(".db") or not os.path.isfile(backup_path):
+        return jsonify({"error": "Backup file not found"}), 404
+    return jsonify({
+        "error": "Forbidden",
+        "message": "Raw database downloads are disabled from the web frontend for data privacy."
+    }), 403
 
 
 @app.route('/gw/admin/backups/restore/<path:filename>', methods=['POST'])
 @app.route('/api/backups/restore/<path:filename>', methods=['POST'])
 @role_required(["admin"])
 def restore_backup_route(filename):
-    res = backup_service.restore_backup(filename)
-    return jsonify(res), (200 if res.get("success") else 400)
+    return jsonify({
+        "success": False,
+        "error": "Forbidden",
+        "message": "Database restore is disabled from the web frontend."
+    }), 403
 
 
 @app.route('/gw/admin/diagnostics', methods=['GET'])
 @app.route('/api/health', methods=['GET'])
 @role_required(["admin"])
 def admin_diagnostics():
-    """Restricted strictly to authenticated Administrators (no key/path leaks to public!)."""
-    has_key = bool(Config.GEMINI_API_KEY and len(Config.GEMINI_API_KEY) > 10)
+    """Restricted strictly to authenticated Administrators; reveals zero API key characters or secrets."""
+    has_gemini = bool(Config.GEMINI_API_KEY and len(Config.GEMINI_API_KEY) > 10)
+    has_groq = groq_service.is_groq_configured()
     stats = database.get_catalog_stats()
-    masked = mask_secret(Config.GEMINI_API_KEY) if has_key else "Not configured"
     return jsonify({
         "status": "healthy",
         "app_name": Config.APP_NAME,
@@ -892,9 +1029,13 @@ def admin_diagnostics():
             "catalog_ttl_seconds": Config.CATALOG_CACHE_TTL_SECONDS
         },
         "queue": queue_service.get_queue_metrics(),
+        "groq": {
+            "configured": has_groq,
+            "vision_model": Config.GROQ_VISION_MODEL,
+            "text_model": Config.GROQ_TEXT_MODEL
+        },
         "gemini": {
-            "configured": has_key,
-            "api_key_masked": masked,
+            "configured": has_gemini,
             "model": "gemini-2.5-flash"
         },
         "security": {
@@ -902,7 +1043,8 @@ def admin_diagnostics():
             "ssl_encryption": "256-Bit TLS",
             "csp_enforced": True,
             "csrf_enforced": True,
-            "opaque_sessions": True
+            "opaque_sessions": True,
+            "frontend_secrets_exposed": False
         }
     })
 
@@ -911,97 +1053,49 @@ def admin_diagnostics():
 @app.route('/api/settings/test-key', methods=['POST'])
 @role_required(["admin"])
 def test_key_route():
-    try:
-        data = request.get_json() or {}
-        key = data.get("api_key") or Config.GEMINI_API_KEY
-        result = test_gemini_connection(key)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"success": False, "message": "Key connectivity check failed"}), 500
+    return jsonify({
+        "success": False,
+        "error": "Forbidden",
+        "message": "API key testing and management are disabled from the web frontend."
+    }), 403
 
 
 @app.route('/gw/admin/settings/key', methods=['POST'])
 @app.route('/api/settings', methods=['POST'])
 @role_required(["admin"])
 def update_settings():
-    try:
-        data = request.get_json() or {}
-        new_key = data.get("gemini_api_key")
-        if new_key is not None:
-            new_key = new_key.strip()
-            Config.GEMINI_API_KEY = new_key
-            env_file = os.path.join(Config.BASE_DIR, ".env")
-            try:
-                set_key(env_file, "GEMINI_API_KEY", new_key)
-            except Exception as env_err:
-                logger.warning(f"Failed to persist GEMINI_API_KEY to .env: {env_err}")
-
-        return jsonify({
-            "success": True,
-            "message": "Settings updated successfully",
-            "gemini_api_key_configured": bool(Config.GEMINI_API_KEY),
-            "masked_key": mask_secret(Config.GEMINI_API_KEY)
-        })
-    except Exception as e:
-        logger.error(f"Settings update error: {e}", exc_info=True)
-        return jsonify({"success": False, "error": "Failed to save API settings"}), 500
+    return jsonify({
+        "success": False,
+        "error": "Forbidden",
+        "message": "API keys cannot be read or modified from the web frontend. Configure GEMINI_API_KEY in server environment."
+    }), 403
 
 
 @app.route('/gw/admin/settings/analytics', methods=['POST'])
 @app.route('/api/settings/analytics', methods=['POST'])
 @role_required(["admin"])
 def update_analytics_settings():
-    try:
-        data = request.get_json() or {}
-        ga_id = (data.get("google_analytics_id") or "").strip().upper()
-        if ga_id and not security_service.GA4_ID_REGEX.match(ga_id):
-            return jsonify({"success": False, "message": "Invalid GA4 Measurement ID format (expected G-XXXXXXXXXX)"}), 400
-        Config.GOOGLE_ANALYTICS_ID = ga_id
-        set_key(os.path.join(Config.BASE_DIR, ".env"), "GOOGLE_ANALYTICS_ID", ga_id)
-        return jsonify({"success": True, "message": "Google Analytics ID saved", "google_analytics_id": ga_id})
-    except Exception as e:
-        return jsonify({"success": False, "message": "Failed to update analytics config"}), 500
+    return jsonify({
+        "success": False,
+        "error": "Forbidden",
+        "message": "Third-party analytics tracking is disabled for user data privacy."
+    }), 403
 
 
 @app.route('/gw/admin/settings/email', methods=['POST'])
 @app.route('/api/settings/email', methods=['POST'])
 @role_required(["admin"])
 def update_email_settings():
-    try:
-        data = request.get_json() or {}
-        domain_email = security_service.sanitize_text_field(data.get("domain_email"), 254).lower()
-        mail_server = security_service.sanitize_text_field(data.get("mail_server"), 120)
-        try:
-            mail_port = int(data.get("mail_port") or 587)
-            if not (1 <= mail_port <= 65535):
-                raise ValueError
-        except (TypeError, ValueError):
-            return jsonify({"success": False, "message": "Invalid SMTP port (1-65535)"}), 400
-
-        if not security_service.validate_email_address(domain_email):
-            return jsonify({"success": False, "message": "Invalid domain email address"}), 400
-
-        Config.DOMAIN_EMAIL = domain_email
-        Config.MAIL_SERVER = mail_server
-        Config.MAIL_PORT = mail_port
-
-        env_file = os.path.join(Config.BASE_DIR, ".env")
-        set_key(env_file, "DOMAIN_EMAIL", domain_email)
-        set_key(env_file, "MAIL_SERVER", mail_server)
-        set_key(env_file, "MAIL_PORT", str(mail_port))
-
-        return jsonify({
-            "success": True,
-            "message": "Domain email configuration updated",
-            "domain_email": domain_email
-        })
-    except Exception as e:
-        logger.error(f"Email config update error: {e}", exc_info=True)
-        return jsonify({"success": False, "message": "Failed to update domain email config"}), 500
+    return jsonify({
+        "success": False,
+        "error": "Forbidden",
+        "message": "SMTP and domain email routing cannot be modified from the web frontend."
+    }), 403
 
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
+    host = os.environ.get("HOST", "127.0.0.1")
     debug_mode = os.environ.get("FLASK_DEBUG", "False").lower() in ("true", "1")
-    print(f"Starting Suchit Product Catalog Generator on http://127.0.0.1:{port} (debug={debug_mode})")
-    app.run(host="0.0.0.0", port=port, debug=debug_mode)
+    print(f"Starting Product Catalog on http://{host}:{port} (debug={debug_mode})")
+    app.run(host=host, port=port, debug=debug_mode)

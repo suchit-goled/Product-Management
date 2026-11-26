@@ -1,5 +1,5 @@
 """
-Suchit Catalog - Showcase Image Generator & Complete DB Enrichment Script
+Product Catalog - Showcase Image Generator & Complete DB Enrichment Script
 Generates crisp 800x600 (4:3) JPEG + WebP studio product cards using system TrueType fonts
 (zero broken Unicode glyphs), updates products.db so ALL products (#3..#12) have complete
 non-null specifications/descriptions/SEO/timestamps, and cleans leftover test records.
@@ -72,8 +72,8 @@ def create_product_artwork(prod_id, title, brand, category, theme_colors, icon_t
     draw_rounded_rect(draw, [29, 29, width - 29, height - 29], radius=18, outline=(accent[0] // 2, accent[1] // 2, accent[2] // 2), width=1)
 
     # Header bar
-    draw_rounded_rect(draw, [48, 44, 230, 82], radius=19, fill=accent)
-    draw.text((68, 53), "SUCHIT CATALOG", fill=(255, 255, 255), font=font_tag)
+    draw_rounded_rect(draw, [48, 44, 240, 82], radius=19, fill=accent)
+    draw.text((64, 53), "PRODUCT CATALOG", fill=(255, 255, 255), font=font_tag)
 
     cat_label = category.upper()
     cat_bbox = draw.textbbox((0, 0), cat_label, font=font_cat)
@@ -159,7 +159,7 @@ def create_product_artwork(prod_id, title, brand, category, theme_colors, icon_t
     draw_rounded_rect(draw, [width - 230, 480, width - 72, 528], radius=10, fill=(30, 41, 59), outline=accent, width=1)
     draw.text((width - 208, 495), "VERIFIED ASSET", fill=(52, 211, 153), font=font_badge)
 
-    slug = f"suchit_asset_{prod_id}_{brand.lower().replace(' ', '_')}"
+    slug = f"product_asset_{prod_id}_{brand.lower().replace(' ', '_')}"
     jpg_filename = f"{slug}.jpg"
     webp_filename = f"{slug}.webp"
 
@@ -295,7 +295,7 @@ def populate_all_images_and_enrich_db():
             json.dumps(specs, ensure_ascii=False),
             json.dumps(usp, ensure_ascii=False),
             json.dumps(tags, ensure_ascii=False),
-            f"{title} | {brand} - Suchit Catalog",
+            f"{title} | {brand} - Product Catalog",
             short_desc[:155],
             img_rel_path,
             now_str, now_str, pid

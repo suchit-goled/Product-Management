@@ -13,9 +13,12 @@ if not product_id:
     print("Usage: python del.py <product_id>")
     sys.exit(0)
 
-BASE_URL = os.getenv("SUCHIT_URL", "http://127.0.0.1:5000")
-USERNAME = os.getenv("SUCHIT_USER", "editor")
-PASSWORD = os.getenv("SUCHIT_PASS", "Editor@12345")
+BASE_URL = os.getenv("CATALOG_URL", "http://127.0.0.1:5000")
+USERNAME = os.getenv("CATALOG_USER", "editor")
+PASSWORD = os.getenv("CATALOG_PASS", "")
+if not PASSWORD:
+    print("Error: Set CATALOG_PASS environment variable before running del.py")
+    sys.exit(1)
 
 session = requests.Session()
 csrf = session.get(f"{BASE_URL}/gw/auth/me").json().get("csrf_token", "")

@@ -1,5 +1,5 @@
 """
-Suchit Catalog - AI Extraction and Multimodal Generation Service
+Product Catalog - AI Extraction and Multimodal Generation Service
 Integrates with Google GenAI SDK (gemini-2.5-flash, gemini-2.0-flash, etc.)
 with structured JSON output, OCR text verification, and reliable offline fallbacks.
 """
@@ -19,7 +19,7 @@ DEFAULT_MODELS = [
 ]
 
 CATALOG_EXTRACTION_PROMPT = """
-You are Suchit Catalog AI, an expert multimodal product cataloging engine.
+You are Product Catalog AI, an expert multimodal product cataloging engine.
 Analyze the provided product image and extract structured product catalog data.
 
 CRITICAL GUIDELINES:
@@ -106,12 +106,12 @@ def get_genai_client(api_key: str = None):
 
 
 def test_gemini_connection(api_key: str = None) -> dict:
-    """Test connectivity and validity of a Gemini API key."""
+    """Test connectivity and validity of the server-configured Gemini API key."""
     key = (api_key or Config.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY") or "").strip()
     if not key:
         return {
             "success": False,
-            "message": "No API key configured. Please enter your Gemini API key.",
+            "message": "No Gemini API key configured on the server environment.",
             "code": "MISSING_KEY"
         }
     
@@ -139,17 +139,16 @@ def test_gemini_connection(api_key: str = None) -> dict:
         except Exception as e:
             err_msg = str(e)
             logger.debug(f"Test connection attempt with {model} failed: {err_msg}")
-            # If invalid argument / key invalid, stop trying other models
             if "API_KEY_INVALID" in err_msg or "API key not valid" in err_msg:
                 return {
                     "success": False,
-                    "message": "API key is invalid or has expired. Please verify your Google AI Studio key.",
+                    "message": "Server Gemini API key is invalid or has expired.",
                     "code": "INVALID_KEY"
                 }
 
     return {
         "success": False,
-        "message": f"Could not connect to Gemini models: {err_msg}",
+        "message": "Could not connect to Gemini models from server.",
         "code": "MODEL_ERROR"
     }
 
@@ -161,21 +160,22 @@ def analyze_product_image(image_path: str, model_name: str = None, api_key: str 
     it falls back cleanly to a local image analysis draft.
     """
     if not os.path.exists(image_path):
-        return _generate_offline_fallback(image_path, "Image file not found on disk")
+        return _generate_offline_fallback(image_path, "Uploaded image file could not be read.")
 
     client = get_genai_client(api_key)
     if not client:
         logger.info("No Gemini API key available. Generating local inspection fallback.")
         return _generate_offline_fallback(
             image_path,
-            "Gemini API key is not configured. A local catalog draft has been prepared. Configure your API key in Settings for AI auto-enrichment."
+            "AI enrichment is not configured on the server. A local catalog draft has been prepared for review."
         )
 
     # Open image for PIL
     try:
         pil_img = Image.open(image_path)
     except Exception as e:
-        return _generate_offline_fallback(image_path, f"Failed to load image with PIL: {e}")
+        logger.warning(f"Failed to load image with PIL: {e}")
+        return _generate_offline_fallback(image_path, "Unable to decode uploaded image for AI inspection. Local draft generated.")
 
     models_to_try = [model_name] if model_name else DEFAULT_MODELS
 
@@ -209,12 +209,39 @@ def analyze_product_image(image_path: str, model_name: str = None, api_key: str 
             if "API_KEY_INVALID" in err_str or "API key not valid" in err_str:
                 break
 
-    # If all model attempts failed, return high quality local fallback
+    # If all model attempts failed, return high quality local fallback without leaking raw API errors
     logger.warning(f"All Gemini model attempts failed. Error: {last_error}. Using local fallback.")
     return _generate_offline_fallback(
         image_path,
-        f"AI service temporarily unavailable ({last_error}). Local catalog draft generated for review."
+        "AI service temporarily unavailable. Local catalog draft generated for review."
     )
+
+
+def generate_catalog_from_prompt_gemini(prompt_text: str, model_name: str = None, api_key: str = None) -> dict:
+    """Generates structured product catalog JSON from a text prompt via Google GenAI."""
+    client = get_genai_client(api_key)
+    if not client:
+        return {}
+    models_to_try = [model_name] if model_name else DEFAULT_MODELS
+    full_prompt = (
+        f"{CATALOG_EXTRACTION_PROMPT}\n\n"
+        f"PRODUCT BRIEF:\n{prompt_text}\n\nReturn ONLY a valid JSON object matching the schema."
+    )
+    for model in models_to_try:
+        if not model:
+            continue
+        try:
+            response = client.models.generate_content(model=model, contents=full_prompt)
+            cleaned = clean_json_text(response.text or "")
+            data = json.loads(cleaned)
+            normalized = _normalize_catalog_data(data, "", source=f"gemini:{model}")
+            normalized["image_path"] = ""
+            return normalized
+        except Exception as exc:
+            logger.warning(f"Gemini text generation failed on {model}: {exc}")
+            if "API_KEY_INVALID" in str(exc) or "API key not valid" in str(exc):
+                break
+    return {}
 
 
 def _generate_offline_fallback(image_path: str, reason: str) -> dict:
@@ -224,8 +251,8 @@ def _generate_offline_fallback(image_path: str, reason: str) -> dict:
     """
     filename = os.path.basename(image_path) if image_path else "product_image.jpg"
     base_name = os.path.splitext(filename)[0]
-    # Clean up name: remove 'suchit_prod_xxxx_' prefix if present
-    clean_title = re.sub(r"^suchit_[a-f0-9]+_", "", base_name)
+    # Clean up name: remove 'prod_xxxx_' prefix if present
+    clean_title = re.sub(r"^(?:suchit|prod)_[a-f0-9]+_", "", base_name)
     clean_title = re.sub(r"[-_]+", " ", clean_title).strip().title()
     if not clean_title or clean_title.lower() in ("product", "image", "upload"):
         clean_title = "New Product Catalog Item"
@@ -251,7 +278,7 @@ def _generate_offline_fallback(image_path: str, reason: str) -> dict:
         "price": "₹999 (estimated)",
         "dimensions": dims,
         "short_description": f"Catalog draft created for {clean_title}.",
-        "description": f"This product catalog record was created from image '{filename}'. Please review and update product specifications, pricing, brand details, and marketing highlights to complete your Suchit catalog listing.",
+        "description": f"This product catalog record was prepared locally for '{clean_title}'. Please review and update product specifications, pricing, brand details, and marketing highlights to complete your product catalog listing.",
         "features": [
             "Ergonomic and functional design",
             "High quality build and materials",
@@ -272,8 +299,8 @@ def _generate_offline_fallback(image_path: str, reason: str) -> dict:
             "product",
             clean_title.lower().replace(" ", "-")
         ],
-        "seo_title": f"{clean_title} | Suchit Product Catalog",
-        "seo_description": f"Explore details and specifications for {clean_title} in the Suchit Product Catalog.",
+        "seo_title": f"{clean_title} | Product Catalog",
+        "seo_description": f"Explore details and specifications for {clean_title} in the Product Catalog.",
         "verified_fields": [],
         "suggested_fields": ["product_name", "category", "features", "description", "selling_points"],
         "extraction_source": "offline_fallback",

@@ -1,5 +1,5 @@
 """
-Suchit Catalog - Database Management Module ("Database: Source of truth")
+Product Catalog - Database Management Module ("Database: Source of truth")
 SQLite WAL-mode data layer with non-destructive auto-migration, strict input validation,
 cryptographic OTP verification, brute-force account lockout, server-side checkout pricing,
 L1/L2 Cache integration, and Message Queue job dispatching.
@@ -16,7 +16,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import Config
 from services import cache_service, queue_service, security_service
 
-logger = logging.getLogger("suchit.database")
+logger = logging.getLogger("product_catalog.database")
 
 
 def get_db_connection():
@@ -162,25 +162,25 @@ def seed_default_users():
     cursor = conn.cursor()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    cursor.execute("SELECT id FROM users WHERE username = 'admin' OR email = 'admin@suchitcatalog.com'")
+    cursor.execute("SELECT id FROM users WHERE username = 'admin' OR email = 'admin@product-catalog.com'")
     if not cursor.fetchone():
         admin_hash = generate_password_hash("Admin@12345")
         cursor.execute("""
         INSERT INTO users (
             username, email, password_hash, role, is_verified, is_active, created_at, updated_at
-        ) VALUES ('admin', 'admin@suchitcatalog.com', ?, 'admin', 1, 1, ?, ?)
+        ) VALUES ('admin', 'admin@product-catalog.com', ?, 'admin', 1, 1, ?, ?)
         """, (admin_hash, now_str, now_str))
-        logger.info("Seeded Admin account: admin@suchitcatalog.com")
+        logger.info("Seeded Admin account: admin@product-catalog.com")
 
-    cursor.execute("SELECT id FROM users WHERE username = 'editor' OR email = 'editor@suchitcatalog.com'")
+    cursor.execute("SELECT id FROM users WHERE username = 'editor' OR email = 'editor@product-catalog.com'")
     if not cursor.fetchone():
         editor_hash = generate_password_hash("Editor@12345")
         cursor.execute("""
         INSERT INTO users (
             username, email, password_hash, role, is_verified, is_active, created_at, updated_at
-        ) VALUES ('editor', 'editor@suchitcatalog.com', ?, 'editor', 1, 1, ?, ?)
+        ) VALUES ('editor', 'editor@product-catalog.com', ?, 'editor', 1, 1, ?, ?)
         """, (editor_hash, now_str, now_str))
-        logger.info("Seeded Editor account: editor@suchitcatalog.com")
+        logger.info("Seeded Editor account: editor@product-catalog.com")
 
     conn.commit()
     conn.close()
@@ -214,7 +214,7 @@ def create_user(username: str, email: str, password: str, allow_elevated_role: s
     cursor.execute("SELECT id FROM users WHERE username = ? OR email = ?", (clean_username, clean_email))
     if cursor.fetchone():
         conn.close()
-        return {"success": False, "message": "A user with this username or email already exists"}
+        return {"success": False, "conflict": True, "message": "Unable to register with the provided account details"}
 
     password_hash = generate_password_hash(password)
     raw_code = "".join(secrets.choice(string.digits) for _ in range(6))
@@ -370,33 +370,28 @@ def get_user_by_id(user_id: int):
     return None
 
 
-def verify_user_code(user_id_or_email, code: str) -> tuple:
+def verify_user_code(user_id: int, code: str) -> tuple:
     """
     Verifies a user's 6-digit OTP via HMAC-SHA256 with TTL (15m) & max 5 attempt enforcement.
-    Zero hardcoded bypasses. Returns (verified: bool, message: str).
+    Bound strictly to authenticated integer user_id; returns uniform errors to prevent enumeration.
     """
     clean_code = (code or "").strip()
+    if not isinstance(user_id, int) or isinstance(user_id, bool):
+        return False, "Invalid or expired verification code."
     if not clean_code or len(clean_code) != 6 or not clean_code.isdigit():
         return False, "Verification code must be a 6-digit number"
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    if isinstance(user_id_or_email, int) or (isinstance(user_id_or_email, str) and user_id_or_email.isdigit()):
-        row = cursor.execute(
-            "SELECT id, email, verification_code, verification_expires_at, verification_attempts, is_verified FROM users WHERE id = ?",
-            (int(user_id_or_email),)
-        ).fetchone()
-    else:
-        ident = str(user_id_or_email).strip().lower()
-        row = cursor.execute(
-            "SELECT id, email, verification_code, verification_expires_at, verification_attempts, is_verified FROM users WHERE email = ? OR username = ?",
-            (ident, ident)
-        ).fetchone()
+    row = cursor.execute(
+        "SELECT id, email, verification_code, verification_expires_at, verification_attempts, is_verified FROM users WHERE id = ?",
+        (user_id,)
+    ).fetchone()
 
     if not row:
         conn.close()
-        return False, "Account not found"
+        return False, "Invalid or expired verification code."
 
     if row["is_verified"]:
         conn.close()
@@ -405,12 +400,12 @@ def verify_user_code(user_id_or_email, code: str) -> tuple:
     attempts = int(row["verification_attempts"] or 0)
     if attempts >= 5:
         conn.close()
-        return False, "Maximum verification attempts exceeded. Request a new code."
+        return False, "Invalid or expired verification code."
 
     expires_at = float(row["verification_expires_at"] or 0)
     if time.time() > expires_at:
         conn.close()
-        return False, "Verification code has expired. Please request a new code."
+        return False, "Invalid or expired verification code."
 
     stored_digest = row["verification_code"] or ""
     if security_service.verify_hashed_code(row["email"], clean_code, stored_digest):
@@ -430,7 +425,7 @@ def verify_user_code(user_id_or_email, code: str) -> tuple:
     )
     conn.commit()
     conn.close()
-    return False, "Invalid verification code"
+    return False, "Invalid or expired verification code."
 
 
 # ==============================================================================
@@ -482,11 +477,23 @@ def save_inquiry(data: dict) -> dict:
     }
 
 
-def get_inquiries(limit: int = 50) -> list:
+def get_inquiries_summary(limit: int = 50) -> list:
+    """Returns redacted inquiry ticket metadata without exposing customer PII to frontend."""
     conn = get_db_connection()
-    rows = conn.execute("SELECT * FROM inquiries ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    rows = conn.execute(
+        "SELECT id, category, status, created_at FROM inquiries ORDER BY id DESC LIMIT ?",
+        (limit,)
+    ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [
+        {
+            "reference_code": f"INQ-{r['id']:04d}",
+            "category": r["category"] or "General",
+            "status": r["status"] or "new",
+            "created_at": r["created_at"] or "",
+        }
+        for r in rows
+    ]
 
 
 def create_verified_order(data: dict, authenticated_user: dict) -> tuple:
@@ -567,7 +574,7 @@ def create_verified_order(data: dict, authenticated_user: dict) -> tuple:
     formatted_tax = f"{currency}{totals['tax']:,.2f}"
     formatted_total = f"{currency}{totals['total']:,.2f}"
 
-    order_number = f"SUCHIT-ORD-{secrets.randbelow(900000) + 100000}"
+    order_number = f"PC-ORD-{secrets.randbelow(900000) + 100000}"
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     user_id = authenticated_user["id"] if authenticated_user else None
 
@@ -615,17 +622,27 @@ def create_verified_order(data: dict, authenticated_user: dict) -> tuple:
 
 
 def get_orders(limit: int = 50, user_id: int = None) -> list:
-    """Retrieves orders; filtered strictly by user_id when not admin/editor."""
+    """Retrieves privacy-safe order summaries (never returning email, name, or billing_address to frontend)."""
     conn = get_db_connection()
+    base_cols = (
+        "order_number, product_id, product_name, quantity, unit_price, "
+        "tax_amount, amount, currency, payment_method, card_last4, status, created_at"
+    )
     if user_id is not None:
         rows = conn.execute(
-            "SELECT * FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            f"SELECT {base_cols} FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT ?",
             (user_id, limit)
         ).fetchall()
     else:
-        rows = conn.execute("SELECT * FROM orders ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        rows = conn.execute(f"SELECT {base_cols} FROM orders ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    results = []
+    for r in rows:
+        item = dict(r)
+        if item.get("card_last4"):
+            item["card_last4"] = f"•••• {item['card_last4'][-4:]}"
+        results.append(item)
+    return results
 
 
 # ==============================================================================

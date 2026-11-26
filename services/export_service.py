@@ -1,5 +1,5 @@
 """
-Suchit Catalog - Export Service
+Product Catalog - Export Service
 Handles CSV and JSON exports with UTF-8 BOM encoding, RFC 4180 quoting,
 and Spreadsheet Formula / DDE Injection mitigation across every CSV cell.
 """
@@ -62,7 +62,7 @@ def export_products_csv(products: list) -> bytes:
 def export_products_json(products: list) -> str:
     """Exports products as formatted JSON feed with catalog metadata."""
     payload = {
-        "catalog_name": "Suchit Product Catalog",
+        "catalog_name": "Product Catalog",
         "export_timestamp": datetime.datetime.now().isoformat(),
         "total_items": len(products),
         "products": products

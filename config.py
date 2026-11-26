@@ -1,14 +1,14 @@
 """
-Suchit Catalog - Application Configuration Module
+Product Catalog - Application Configuration Module
 Handles environment variables, CSPRNG secret key provisioning, security policies,
-database paths, cache/session TTLs, SMTP/domain email, analytics, and backups.
+database paths, cache/session TTLs, SMTP/domain email, and backups.
 """
 import os
 import secrets
 import logging
 from dotenv import load_dotenv, set_key
 
-logger = logging.getLogger("suchit.config")
+logger = logging.getLogger("product_catalog.config")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
@@ -20,7 +20,7 @@ WEAK_SECRET_PLACEHOLDERS = {
     "changeme",
     "secret",
     "dev",
-    "suchit-catalog-secret-key-prod-2026",
+    "product-catalog-secret-key-prod-2026",
 }
 
 
@@ -33,7 +33,7 @@ def _load_or_generate_secret_key() -> str:
     if env_secret and env_secret not in WEAK_SECRET_PLACEHOLDERS and len(env_secret) >= 32:
         return env_secret
 
-    secret_file = os.path.join(BASE_DIR, ".suchit_secret")
+    secret_file = os.path.join(BASE_DIR, ".catalog_secret")
     if os.path.exists(secret_file):
         try:
             with open(secret_file, "r", encoding="utf-8") as f:
@@ -58,7 +58,7 @@ def _load_or_generate_secret_key() -> str:
 class Config:
     # Security & Stateless Session Config
     SECRET_KEY = _load_or_generate_secret_key()
-    SESSION_COOKIE_NAME = "suchit_sid"
+    SESSION_COOKIE_NAME = "catalog_sid"
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "False").lower() in ("true", "1", "yes")
@@ -71,9 +71,13 @@ class Config:
         "http://127.0.0.1:5000,http://localhost:5000"
     )
     ALLOWED_ORIGINS = [o.strip() for o in RAW_ALLOWED_ORIGINS.split(",") if o.strip()]
+    TRUST_PROXY = os.getenv("TRUST_PROXY", "False").lower() in ("true", "1", "yes")
 
-    # AI Integration
+    # AI Integration (Strictly server-side environment variables; never exposed to frontend)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+    GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct").strip()
+    GROQ_TEXT_MODEL = os.getenv("GROQ_TEXT_MODEL", "llama-3.3-70b-versatile").strip()
 
     # Database & Storage
     _db_env = os.getenv("DATABASE", "products.db").strip()
@@ -93,22 +97,22 @@ class Config:
     # Google Analytics 4 (GA4)
     GOOGLE_ANALYTICS_ID = os.getenv("GOOGLE_ANALYTICS_ID", "").strip()
 
-    # WhatsApp Support
-    WHATSAPP_NUMBER = os.getenv("WHATSAPP_NUMBER", "+919876543210").strip()
+    # Optional Public Support Contact (disabled unless explicitly configured)
+    WHATSAPP_NUMBER = os.getenv("WHATSAPP_NUMBER", "").strip()
     WHATSAPP_MESSAGE = os.getenv(
         "WHATSAPP_MESSAGE",
-        "Hello Suchit Catalog Support! I have a question regarding product cataloging."
+        "Hello Product Catalog Support! I have a question regarding product listings."
     ).strip()
 
     # Domain Email & SMTP
-    DOMAIN_EMAIL = os.getenv("DOMAIN_EMAIL", "support@suchitcatalog.com").strip()
-    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.suchitcatalog.com").strip()
+    DOMAIN_EMAIL = os.getenv("DOMAIN_EMAIL", "support@product-catalog.com").strip()
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.product-catalog.com").strip()
     MAIL_PORT = int(os.getenv("MAIL_PORT", "587"))
     MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "True").lower() in ("true", "1", "yes")
-    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "support@suchitcatalog.com").strip()
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "support@product-catalog.com").strip()
     MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "").strip()
-    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "Suchit Catalog <support@suchitcatalog.com>").strip()
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "Product Catalog <support@product-catalog.com>").strip()
 
     # Application Branding
-    APP_NAME = "Suchit Product Catalog Generator"
+    APP_NAME = "Product Catalog"
     APP_VERSION = "2.3.0"

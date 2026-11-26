@@ -33,6 +33,6 @@ Thumbs.db
 backups/*.db
 !backups/.gitkeep
 
-.suchit_secret
+.catalog_secret
 *.db-wal
 *.db-shm

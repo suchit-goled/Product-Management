@@ -9,7 +9,7 @@ url = "http://127.0.0.1:5000/products"
 response = requests.get(url)
 
 if response.status_code == 200:
-    print("All Products in Suchit Catalog:")
+    print("All Products in Product Catalog:")
     products = response.json()
     print(f"Total Products: {len(products)}")
     for p in products:

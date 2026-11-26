@@ -1,5 +1,5 @@
 """
-Suchit Catalog - Image Processing, EXIF Stripping & Optimization Service
+Product Catalog - Image Processing, EXIF Stripping & Optimization Service
 Validates magic bytes via Pillow, auto-rotates EXIF, strips sensitive EXIF metadata
 (GPS/XSS payloads) on write, downscales safely, and creates WebP + primary copies.
 """
@@ -9,7 +9,7 @@ import logging
 from PIL import Image, ImageOps
 from werkzeug.utils import secure_filename
 
-logger = logging.getLogger("suchit.image")
+logger = logging.getLogger("product_catalog.image")
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff'}
 MAX_DIMENSION = 1920
@@ -84,7 +84,7 @@ def validate_and_save_image(file_storage, upload_folder, max_dim=MAX_DIMENSION, 
         if ext not in ALLOWED_EXTENSIONS:
             ext = 'jpg'
 
-        save_filename = f"suchit_{unique_prefix}_{orig_filename}"
+        save_filename = f"prod_{unique_prefix}_{orig_filename}"
         if not save_filename.lower().endswith(f".{ext}"):
             save_filename = f"{save_filename}.{ext}"
 

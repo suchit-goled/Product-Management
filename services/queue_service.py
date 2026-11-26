@@ -1,5 +1,5 @@
 """
-Suchit Catalog - Persistent Message Queue Layer ("Message queue: Async jobs, emails")
+Product Catalog - Persistent Message Queue Layer ("Message queue: Async jobs, emails")
 Stores asynchronous background jobs (verification emails, order receipts, contact
 acknowledgments, scheduled backups) cleanly in SQLite so workers process them safely.
 """
@@ -10,7 +10,7 @@ import threading
 from datetime import datetime
 from config import Config
 
-logger = logging.getLogger("suchit.queue")
+logger = logging.getLogger("product_catalog.queue")
 _QLOCK = threading.RLock()
 
 
@@ -172,3 +172,23 @@ def get_recent_outbox(limit: int = 25) -> list:
         ).fetchall()
         conn.close()
     return [dict(r) for r in rows]
+
+
+def get_recent_outbox_summary(limit: int = 25) -> list:
+    """Returns redacted delivery status logs without exposing customer emails or bodies to frontend."""
+    with _QLOCK:
+        conn = _get_conn()
+        rows = conn.execute(
+            "SELECT id, delivery_mode, status, created_at FROM email_outbox ORDER BY id DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        conn.close()
+    return [
+        {
+            "event_id": f"MSG-{r['id']:04d}",
+            "delivery_mode": r["delivery_mode"],
+            "status": r["status"],
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]

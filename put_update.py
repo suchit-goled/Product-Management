@@ -8,9 +8,12 @@ import requests
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
-BASE_URL = os.getenv("SUCHIT_URL", "http://127.0.0.1:5000")
-USERNAME = os.getenv("SUCHIT_USER", "editor")
-PASSWORD = os.getenv("SUCHIT_PASS", "Editor@12345")
+BASE_URL = os.getenv("CATALOG_URL", "http://127.0.0.1:5000")
+USERNAME = os.getenv("CATALOG_USER", "editor")
+PASSWORD = os.getenv("CATALOG_PASS", "")
+if not PASSWORD:
+    print("Error: Set CATALOG_PASS environment variable before running put_update.py")
+    sys.exit(1)
 
 product_id = 3
 updated_product_data = {

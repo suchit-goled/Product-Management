@@ -4,18 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <meta name="csrf-token" content="{{ csrf_token }}">
-    <title>Suchit — AI Product Catalog Generator</title>
+    <title>Product Catalog</title>
 
-    <meta name="description" content="Suchit is an intelligent multimodal AI product catalog generator delivering rich specifications, commercial licensing, and multi-channel catalog exports.">
-    <meta name="author" content="Suchit">
+    <meta name="description" content="Product Catalog is an intelligent multimodal catalog platform delivering rich specifications, commercial licensing, and multi-channel catalog exports.">
+    <meta name="author" content="Product Catalog">
     <meta name="theme-color" content="#2563eb">
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50%' y='68%' font-size='60' font-weight='800' fill='white' text-anchor='middle' font-family='sans-serif'>S</text></svg>">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50%' y='68%' font-size='60' font-weight='800' fill='white' text-anchor='middle' font-family='sans-serif'>P</text></svg>">
 </head>
 <body data-authenticated="{{ 'true' if current_user else 'false' }}"
-      data-role="{{ current_user.role if current_user else 'guest' }}"
-      data-ga-id="{{ google_analytics_id }}">
+      data-role="{{ current_user.role if current_user else 'guest' }}">
 
     <!-- ====================================================================
          HEADER & TOP NAVIGATION (DESKTOP & MOBILE)
@@ -27,11 +26,11 @@
                     ☰
                 </button>
 
-                <div class="brand-wrapper" title="Suchit Catalog Workspace" data-tab="catalogExplorer">
-                    <div class="brand-icon">S</div>
+                <div class="brand-wrapper" title="Product Catalog Workspace" data-tab="catalogExplorer">
+                    <div class="brand-icon">P</div>
                     <div class="brand-text">
-                        <span class="brand-name">Suchit</span>
-                        <span class="brand-tagline">Catalog Generator</span>
+                        <span class="brand-name">Product Catalog</span>
+                        <span class="brand-tagline">Enterprise Directory</span>
                     </div>
                 </div>
 
@@ -40,6 +39,8 @@
                     <li><a class="nav-link active" href="#catalogExplorer" data-tab="catalogExplorer">Catalog Explorer</a></li>
                     {% if current_user and current_user.role in ('admin', 'editor') %}
                     <li><a class="nav-link" href="#aiStudio" data-tab="aiStudio">AI Studio</a></li>
+                    {% else %}
+                    <li><a class="nav-link" href="#catalogStudioGate" data-tab="catalogStudioGate">AI Studio</a></li>
                     {% endif %}
                     <li><a class="nav-link" href="#checkoutSection" data-tab="checkoutSection">Order / Checkout</a></li>
                     <li><a class="nav-link" href="#contactSection" data-tab="contactSection">Contact Support</a></li>
@@ -83,10 +84,10 @@
     <aside class="mobile-nav-drawer" id="mobileNavDrawer" aria-label="Mobile Navigation">
         <div class="mobile-drawer-header">
             <div class="brand-wrapper" data-tab="catalogExplorer">
-                <div class="brand-icon">S</div>
+                <div class="brand-icon">P</div>
                 <div class="brand-text">
-                    <span class="brand-name">Suchit</span>
-                    <span class="brand-tagline">Catalog Generator</span>
+                    <span class="brand-name">Product Catalog</span>
+                    <span class="brand-tagline">Enterprise Directory</span>
                 </div>
             </div>
             <button type="button" class="modal-close-btn" id="mobileDrawerCloseBtn" aria-label="Close Menu">&times;</button>
@@ -95,7 +96,9 @@
         <ul class="mobile-drawer-links">
             <li><a class="nav-link active" href="#catalogExplorer" data-tab="catalogExplorer">📦 Catalog Explorer</a></li>
             {% if current_user and current_user.role in ('admin', 'editor') %}
-            <li><a class="nav-link" href="#aiStudio" data-tab="aiStudio">✨ AI Studio Ingest</a></li>
+            <li><a class="nav-link" href="#aiStudio" data-tab="aiStudio">✨ AI Studio</a></li>
+            {% else %}
+            <li><a class="nav-link" href="#catalogStudioGate" data-tab="catalogStudioGate">✨ AI Studio</a></li>
             {% endif %}
             <li><a class="nav-link" href="#checkoutSection" data-tab="checkoutSection">💳 Order / Checkout</a></li>
             <li><a class="nav-link" href="#contactSection" data-tab="contactSection">💬 Contact Support</a></li>
@@ -133,7 +136,7 @@
             {% if current_user and not current_user.is_verified %}
             <div class="alert-banner" id="emailVerificationBanner">
                 <div>
-                    <b>Email Verification Pending:</b> Please confirm the 6-digit verification code dispatched to <code>{{ current_user.email }}</code>.
+                    <b>Email Verification Pending:</b> Please confirm the 6-digit verification code dispatched to your registered email address.
                 </div>
                 <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
                     <button type="button" class="btn btn-primary btn-sm" data-action="verify-email-modal">Enter Code</button>
@@ -192,7 +195,11 @@
                         </a>
                         {% if current_user and current_user.role in ('admin', 'editor') %}
                         <button type="button" class="btn btn-primary btn-sm" data-tab="aiStudio">
-                            ✨ AI Product Ingest
+                            ✨ Add Product (AI Studio)
+                        </button>
+                        {% else %}
+                        <button type="button" class="btn btn-primary btn-sm" data-tab="catalogStudioGate">
+                            ✨ AI Studio
                         </button>
                         {% endif %}
                     </div>
@@ -249,72 +256,121 @@
 
             {% if current_user and current_user.role in ('admin', 'editor') %}
             <!-- ================================================================
-                 SECTION 2: AI STUDIO (EDITOR / ADMIN ONLY - SERVER GATED)
+                 SECTION 2: PRODUCT CATALOG AI STUDIO (EDITOR / ADMIN ONLY)
                  ================================================================ -->
             <section class="content-section" id="aiStudio">
                 <div class="section-header-row">
                     <div class="section-title-group">
-                        <h2>Suchit AI Catalog Studio</h2>
-                        <p>Authorized Workspace — Upload product media to sanitize, extract specifications, and publish records</p>
+                        <h2>Product Catalog AI Studio</h2>
+                        <p>Authorized Workspace — Generate structured product catalog records via Groq AI from product photos or text briefs</p>
                     </div>
                 </div>
 
                 <div class="workflow-stepper">
-                    <div class="step-item active" id="step1Indicator"><div class="step-circle">1</div><span>Upload Image</span></div>
+                    <div class="step-item active" id="step1Indicator"><div class="step-circle">1</div><span>Input Media / Prompt</span></div>
                     <div class="step-divider"></div>
-                    <div class="step-item" id="step2Indicator"><div class="step-circle">2</div><span>Configure &amp; Analyze</span></div>
+                    <div class="step-item" id="step2Indicator"><div class="step-circle">2</div><span>Configure &amp; Generate</span></div>
                     <div class="step-divider"></div>
                     <div class="step-item" id="step3Indicator"><div class="step-circle">3</div><span>Review &amp; Refine</span></div>
                     <div class="step-divider"></div>
                     <div class="step-item" id="step4Indicator"><div class="step-circle">4</div><span>Published</span></div>
                 </div>
 
-                <div id="uploadDropzone" class="dropzone-card">
-                    <input type="file" id="catalogImageInput" class="file-hidden-input" accept="image/png, image/jpeg, image/jpg, image/webp">
-                    <svg class="dropzone-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-                    </svg>
-                    <h3 class="dropzone-title">Drag &amp; Drop Product Image Here</h3>
-                    <p class="dropzone-subtitle">PNG, JPG, JPEG, or WEBP up to 16MB. EXIF metadata is stripped automatically before AI analysis.</p>
-                    <button type="button" class="btn btn-secondary">Browse From Device</button>
+                <div id="generatorModeSwitch" style="display:flex;gap:0.65rem;margin-bottom:1.25rem;flex-wrap:wrap;">
+                    <button type="button" id="modeImageBtn" class="btn btn-primary btn-sm">📸 Generate from Product Image</button>
+                    <button type="button" id="modePromptBtn" class="btn btn-secondary btn-sm">✍️ Generate from Text Prompt</button>
                 </div>
 
-                <div id="uploadPreviewBox" class="upload-preview-box">
-                    <div class="preview-grid">
-                        <div class="preview-image-frame">
-                            <img id="selectedImgPreview" src="" alt="Selected Product Preview">
-                        </div>
-                        <div class="preview-details">
-                            <div class="preview-filename" id="previewFilename">filename.jpg</div>
-                            <div class="preview-meta-chips">
-                                <span class="spec-chip" id="previewFilesize">0 KB</span>
-                                <span class="spec-chip">EXIF Sanitization Enabled</span>
-                            </div>
+                <div id="imageGeneratorPane">
+                    <div id="uploadDropzone" class="dropzone-card">
+                        <input type="file" id="catalogImageInput" class="file-hidden-input" accept="image/png, image/jpeg, image/jpg, image/webp">
+                        <svg class="dropzone-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                        <h3 class="dropzone-title">Drag &amp; Drop Product Image Here</h3>
+                        <p class="dropzone-subtitle">PNG, JPG, JPEG, or WEBP up to 16MB. EXIF metadata is stripped automatically before AI analysis.</p>
+                        <button type="button" class="btn btn-secondary">Browse From Device</button>
+                    </div>
 
-                            <div style="margin-top:1rem;display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
-                                <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px;">
-                                    <label for="aiModelSelect" style="font-size:0.8rem;">Gemini Engine:</label>
-                                    <select id="aiModelSelect" class="form-control">
-                                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
-                                        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                                        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                                    </select>
+                    <div id="uploadPreviewBox" class="upload-preview-box">
+                        <div class="preview-grid">
+                            <div class="preview-image-frame">
+                                <img id="selectedImgPreview" src="" alt="Selected Product Preview">
+                            </div>
+                            <div class="preview-details">
+                                <div class="preview-filename" id="previewFilename">filename.jpg</div>
+                                <div class="preview-meta-chips">
+                                    <span class="spec-chip" id="previewFilesize">0 KB</span>
+                                    <span class="spec-chip">EXIF Sanitization Enabled</span>
                                 </div>
-                            </div>
 
-                            <div style="margin-top:1.25rem;display:flex;gap:0.75rem;flex-wrap:wrap;">
-                                <button type="button" id="startAiAnalysisBtn" class="btn btn-primary">✨ Generate Catalog Draft</button>
-                                <button type="button" id="clearSelectedImageBtn" class="btn btn-secondary">Replace Image</button>
+                                <div style="margin-top:1rem;display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+                                    <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px;">
+                                        <label for="aiModelSelect" style="font-size:0.8rem;">AI Vision Engine (Server-Keyed):</label>
+                                        <select id="aiModelSelect" class="form-control">
+                                            <option value="meta-llama/llama-4-scout-17b-16e-instruct">Groq Llama 4 Scout Vision (Recommended)</option>
+                                            <option value="qwen/qwen3.8-27b">Groq Qwen 3.8 Vision</option>
+                                            <option value="gemini-2.5-flash">Google Gemini 2.5 Flash</option>
+                                            <option value="gemini-2.0-flash">Google Gemini 2.0 Flash</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div style="margin-top:1.25rem;display:flex;gap:0.75rem;flex-wrap:wrap;">
+                                    <button type="button" id="startAiAnalysisBtn" class="btn btn-primary">✨ Generate Catalog Draft</button>
+                                    <button type="button" id="clearSelectedImageBtn" class="btn btn-secondary">Replace Image</button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
+                <div id="promptGeneratorPane" class="table-card" style="display:none;padding:1.75rem;margin-bottom:1.5rem;">
+                    <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:0.4rem;">Generate Catalog Record from Product Brief</h3>
+                    <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:1.25rem;">Describe a product, paste raw specifications, or enter SKU notes — Groq generates structured features, specs table, selling points, and SEO fields.</p>
+
+                    <div class="form-group">
+                        <label for="promptCatalogInput">Product Brief / Description / Specs *</label>
+                        <textarea id="promptCatalogInput" class="form-control" style="min-height:110px;" placeholder="e.g., Sony WH-1000XM5 Wireless Noise-Canceling Headphones, 30h battery, multipoint Bluetooth 5.2, USB-C fast charge, silver finish"></textarea>
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="promptBrandInput">Brand (Optional)</label>
+                            <input type="text" id="promptBrandInput" class="form-control" placeholder="e.g., Sony">
+                        </div>
+                        <div class="form-group">
+                            <label for="promptCategoryInput">Category (Optional)</label>
+                            <input type="text" id="promptCategoryInput" class="form-control" placeholder="e.g., Electronics &amp; Audio">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="promptPriceInput">Target / Listed Price (Optional)</label>
+                            <input type="text" id="promptPriceInput" class="form-control" placeholder="e.g., ₹29,990">
+                        </div>
+                        <div class="form-group">
+                            <label for="promptModelSelect">Groq / AI Generator Engine (Server-Keyed)</label>
+                            <select id="promptModelSelect" class="form-control">
+                                <option value="llama-3.3-70b-versatile">Groq Llama 3.3 70B Versatile (Recommended)</option>
+                                <option value="meta-llama/llama-4-scout-17b-16e-instruct">Groq Llama 4 Scout 17B</option>
+                                <option value="qwen/qwen3.8-27b">Groq Qwen 3.8 27B</option>
+                                <option value="gemini-2.5-flash">Google Gemini 2.5 Flash</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="button" id="generateFromPromptBtn" class="btn btn-primary btn-lg" style="margin-top:0.5rem;">
+                        ✨ Generate Catalog Entry
+                    </button>
+                </div>
+
                 <div id="aiProgressCard" class="ai-progress-card">
                     <div class="ai-spinner"></div>
-                    <h3 style="font-size:1.2rem;font-weight:700;color:#0f172a;">Processing Media &amp; Extracting Details</h3>
+                    <h3 style="font-size:1.2rem;font-weight:700;color:#0f172a;">Generating Structured Catalog Draft</h3>
                     <div class="progress-bar-bg"><div id="aiProgressBarFill" class="progress-bar-fill"></div></div>
-                    <p id="aiProgressStatus" style="font-size:0.88rem;color:#64748b;">Running Pillow sanitization...</p>
+                    <p id="aiProgressStatus" style="font-size:0.88rem;color:#64748b;">Running server-side AI extraction...</p>
                 </div>
 
                 <div id="reviewWorkspace" class="review-workspace">
@@ -399,6 +455,26 @@
                     </div>
                 </div>
             </section>
+            {% else %}
+            <!-- ================================================================
+                 SECTION 2 (GATE): AI STUDIO ACCESS PROMPT FOR GUESTS/VIEWERS
+                 ================================================================ -->
+            <section class="content-section" id="catalogStudioGate">
+                <div class="section-header-row">
+                    <div class="section-title-group">
+                        <h2>Product Catalog AI Studio</h2>
+                        <p>Powered by server-side Groq Vision &amp; LLMs — extract specs from product images or generate entries from product briefs</p>
+                    </div>
+                </div>
+                <div class="role-locked-box">
+                    <div style="font-size:2rem;margin-bottom:0.5rem;">✨</div>
+                    <h3 style="margin-bottom:0.5rem;">Editor or Admin Sign-In Required</h3>
+                    <p style="font-size:0.9rem;color:var(--text-muted);max-width:480px;margin:0 auto 1.25rem;">
+                        To protect server AI API keys and catalog integrity, only authorized Editor or Admin accounts can launch the Product Catalog AI Studio.
+                    </p>
+                    <button type="button" class="btn btn-primary" data-action="open-auth" data-mode="login">Sign In to Open Studio</button>
+                </div>
+            </section>
             {% endif %}
 
             <!-- ================================================================
@@ -433,11 +509,11 @@
                             <div class="form-grid-2">
                                 <div class="form-group">
                                     <label for="checkoutCustomerName">Full Name *</label>
-                                    <input type="text" id="checkoutCustomerName" class="form-control" placeholder="Jane Doe" value="{{ current_user.username if current_user else '' }}" required>
+                                    <input type="text" id="checkoutCustomerName" class="form-control" placeholder="Jane Doe" autocomplete="off" required>
                                 </div>
                                 <div class="form-group">
                                     <label for="checkoutCustomerEmail">Verified Email *</label>
-                                    <input type="email" id="checkoutCustomerEmail" class="form-control" placeholder="jane@company.com" value="{{ current_user.email if current_user else '' }}" required>
+                                    <input type="email" id="checkoutCustomerEmail" class="form-control" placeholder="jane@company.com" autocomplete="off" required>
                                 </div>
                             </div>
 
@@ -477,20 +553,19 @@
 
                             <div id="cardPaymentFields">
                                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.4rem;">
-                                    <label style="font-size:0.85rem;font-weight:600;color:var(--text-secondary);">Card Details (Luhn Validated, Never Stored)</label>
-                                    <button type="button" id="fillTestCardBtn" class="btn btn-secondary btn-sm">⚡ Fill Test Card</button>
+                                    <label style="font-size:0.85rem;font-weight:600;color:var(--text-secondary);">Card Details (Luhn Validated, Never Stored or Cached)</label>
                                 </div>
                                 <div class="form-group">
-                                    <input type="text" id="checkoutCardNumber" class="form-control" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number">
+                                    <input type="text" id="checkoutCardNumber" class="form-control" placeholder="•••• •••• •••• ••••" maxlength="19" autocomplete="off" inputmode="numeric">
                                 </div>
                                 <div class="form-grid-2">
                                     <div class="form-group">
                                         <label for="checkoutCardExpiry">Expiry (MM/YY)</label>
-                                        <input type="text" id="checkoutCardExpiry" class="form-control" placeholder="12/28" maxlength="5" autocomplete="cc-exp">
+                                        <input type="text" id="checkoutCardExpiry" class="form-control" placeholder="MM/YY" maxlength="5" autocomplete="off">
                                     </div>
                                     <div class="form-group">
                                         <label for="checkoutCardCvv">CVV</label>
-                                        <input type="password" id="checkoutCardCvv" class="form-control" placeholder="•••" maxlength="4" autocomplete="cc-csc">
+                                        <input type="password" id="checkoutCardCvv" class="form-control" placeholder="•••" maxlength="4" autocomplete="off">
                                     </div>
                                 </div>
                             </div>
@@ -591,13 +666,17 @@
                     <div class="table-card" style="padding:1.75rem;height:fit-content;">
                         <h3 style="font-size:1.15rem;font-weight:700;color:var(--text-primary);margin-bottom:1rem;">Direct Channels</h3>
                         <div style="font-size:0.9rem;line-height:1.8;color:var(--text-secondary);margin-bottom:1.5rem;">
-                            <div><b>Domain Email:</b><br><a href="mailto:{{ domain_email }}">{{ domain_email }}</a></div>
-                            <div style="margin-top:0.75rem;"><b>Direct WhatsApp:</b><br><a href="https://wa.me/{{ whatsapp_number | replace('+', '') }}" target="_blank" rel="noopener">{{ whatsapp_number }}</a></div>
+                            <div><b>Support Email:</b><br><a href="mailto:{{ domain_email }}">{{ domain_email }}</a></div>
+                            {% if whatsapp_number %}
+                            <div style="margin-top:0.75rem;"><b>Direct WhatsApp:</b><br><a href="https://wa.me/{{ whatsapp_number | replace('+', '') }}" target="_blank" rel="noopener noreferrer">{{ whatsapp_number }}</a></div>
+                            {% endif %}
                             <div style="margin-top:0.75rem;"><b>Support Hours:</b><br>Mon – Sat, 9:00 AM – 6:00 PM IST</div>
                         </div>
-                        <a href="https://wa.me/{{ whatsapp_number | replace('+', '') }}?text=Hello%20Suchit%20Catalog%20Support" target="_blank" rel="noopener" class="btn btn-success" style="width:100%;background-color:var(--whatsapp);border-color:var(--whatsapp);">
+                        {% if whatsapp_number %}
+                        <a href="https://wa.me/{{ whatsapp_number | replace('+', '') }}?text={{ whatsapp_message | urlencode }}" target="_blank" rel="noopener noreferrer" class="btn btn-success" style="width:100%;background-color:var(--whatsapp);border-color:var(--whatsapp);">
                             💬 Open WhatsApp Chat
                         </a>
+                        {% endif %}
                     </div>
                 </div>
             </section>
@@ -657,13 +736,13 @@
 
             {% if current_user and current_user.role == 'admin' %}
             <!-- ================================================================
-                 SECTION 6: ADMIN CONSOLE (STRICT ADMIN ONLY - HIDDEN FROM NON-ADMINS)
+                 SECTION 6: ADMIN CONSOLE (STRICT ADMIN ONLY - ZERO KEYS OR PII)
                  ================================================================ -->
             <section class="content-section" id="settingsSection">
                 <div class="section-header-row">
                     <div class="section-title-group">
-                        <h2>Administrator Console &amp; Disaster Recovery</h2>
-                        <p>Manage server-side encrypted API keys, GA4, Domain SMTP, ACID backups, and Worker Queues</p>
+                        <h2>Administrator Console &amp; Operational Health</h2>
+                        <p>Privacy-safe operational telemetry &amp; server-side snapshots. API keys, credentials, and raw PII stay strictly off the frontend.</p>
                     </div>
                 </div>
 
@@ -671,70 +750,37 @@
 
                 <div class="settings-grid">
                     <div class="table-card" style="padding:1.75rem;">
-                        <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:0.75rem;">1. Gemini AI Key (Server Encrypted)</h3>
-                        <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:1rem;">Raw keys stay strictly server-side and never reach client JS.</p>
+                        <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:0.75rem;">1. Server Security &amp; AI Status</h3>
+                        <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:1rem;">API keys, SMTP credentials, and trackers are locked strictly to server environment variables and never exposed or editable in the browser.</p>
                         <div class="form-group">
-                            <label>Key Status</label>
-                            <div id="apiKeyMaskedDisplay" style="padding:0.6rem 0.85rem;background:var(--bg-subtle);border-radius:var(--radius-sm);border:1px solid var(--border-color);font-family:monospace;font-size:0.88rem;">
+                            <label>AI Extraction Service</label>
+                            <div id="aiEngineStatusDisplay" style="padding:0.6rem 0.85rem;background:var(--bg-subtle);border-radius:var(--radius-sm);border:1px solid var(--border-color);font-size:0.88rem;">
                                 Loading status...
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label for="settingsApiKeyInput">Rotate Gemini API Key</label>
-                            <input type="password" id="settingsApiKeyInput" class="form-control" placeholder="Enter new AI Studio key...">
+                        <div style="font-size:0.8rem;color:var(--text-muted);line-height:1.6;">
+                            &bull; Zero client-side API keys or partial key previews<br>
+                            &bull; Zero third-party analytics tracking scripts<br>
+                            &bull; Server-side SMTP/config locked against web tampering
                         </div>
-                        <div id="apiKeyTestResult" style="display:none;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;font-size:0.85rem;margin-bottom:1rem;"></div>
-                        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
-                            <button type="button" id="testApiKeyBtn" class="btn btn-secondary btn-sm">🔌 Test Connection</button>
-                            <button type="button" id="saveSettingsBtn" class="btn btn-primary btn-sm">Save Key</button>
-                        </div>
-                    </div>
-
-                    <div class="table-card" style="padding:1.75rem;">
-                        <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:0.75rem;">2. Google Analytics 4 (GA4)</h3>
-                        <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:1rem;">Validated Measurement ID format (<code>G-XXXXXXXXXX</code>).</p>
-                        <div class="form-group">
-                            <label for="settingsGaIdInput">GA4 Measurement ID</label>
-                            <input type="text" id="settingsGaIdInput" class="form-control" placeholder="G-XXXXXXXXXX" value="{{ google_analytics_id }}">
-                        </div>
-                        <button type="button" id="saveAnalyticsBtn" class="btn btn-primary btn-sm">Save GA4 Connection</button>
-                    </div>
-
-                    <div class="table-card" style="padding:1.75rem;">
-                        <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:0.75rem;">3. Domain Email &amp; SMTP Worker</h3>
-                        <div class="form-group">
-                            <label for="settingsDomainEmailInput">Domain Email</label>
-                            <input type="email" id="settingsDomainEmailInput" class="form-control" value="{{ domain_email }}">
-                        </div>
-                        <div class="form-grid-2">
-                            <div class="form-group">
-                                <label for="settingsMailServerInput">SMTP Host</label>
-                                <input type="text" id="settingsMailServerInput" class="form-control" value="{{ mail_server }}">
-                            </div>
-                            <div class="form-group">
-                                <label for="settingsMailPortInput">SMTP Port</label>
-                                <input type="number" id="settingsMailPortInput" class="form-control" value="{{ mail_port }}">
-                            </div>
-                        </div>
-                        <button type="button" id="saveEmailSettingsBtn" class="btn btn-primary btn-sm">Save Email Settings</button>
                     </div>
 
                     <div class="table-card" style="padding:1.75rem;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">
-                            <h3 style="font-size:1.15rem;font-weight:700;">4. ACID Database Backups</h3>
+                            <h3 style="font-size:1.15rem;font-weight:700;">2. Server-Side ACID Snapshots</h3>
                             <button type="button" id="createBackupBtn" class="btn btn-success btn-sm">💾 Create Backup Now</button>
                         </div>
-                        <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:1rem;">Online SQLite snapshots with integrity verification before restore.</p>
+                        <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:1rem;">Snapshots remain stored strictly on server disk (browser downloads &amp; restores disabled for data privacy).</p>
                         <div id="backupsListContainer" style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;"></div>
                     </div>
 
                     <div class="table-card" style="padding:1.75rem;">
-                        <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;">5. Email Worker Outbox</h3>
+                        <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;">3. Delivery Telemetry (Redacted)</h3>
                         <div id="adminOutboxList" style="max-height:180px;overflow-y:auto;">Loading...</div>
                     </div>
 
                     <div class="table-card" style="padding:1.75rem;">
-                        <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;">6. Customer Inquiries</h3>
+                        <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;">4. Support Queue (Anonymized)</h3>
                         <div id="adminInquiriesList" style="max-height:180px;overflow-y:auto;">Loading...</div>
                     </div>
                 </div>
@@ -744,15 +790,17 @@
         </div>
     </main>
 
+    {% if whatsapp_number %}
     <!-- ====================================================================
          FLOATING WHATSAPP BUTTON
          ==================================================================== -->
-    <a href="https://wa.me/{{ whatsapp_number | replace('+', '') }}?text={{ whatsapp_message | urlencode }}" target="_blank" rel="noopener noreferrer" class="whatsapp-float-btn" title="Chat with Suchit Support on WhatsApp">
+    <a href="https://wa.me/{{ whatsapp_number | replace('+', '') }}?text={{ whatsapp_message | urlencode }}" target="_blank" rel="noopener noreferrer" class="whatsapp-float-btn" title="Chat with Product Catalog Support on WhatsApp">
         <div class="whatsapp-pulse-dot"></div>
         <svg viewBox="0 0 24 24">
             <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.771-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.634.053-.943-.046-.226-.071-.482-.164-.789-.296-1.341-.579-2.209-1.936-2.275-2.025-.067-.088-.542-.724-.542-1.381 0-.658.344-.981.467-1.112.122-.132.268-.165.357-.165.089 0 .178.002.256.006.082.004.192-.031.3.228.111.267.378.922.411.99.033.067.056.146.011.235-.044.09-.067.146-.133.224-.067.078-.141.174-.202.234-.067.067-.137.139-.059.273.078.133.348.574.747.93.513.457.947.599 1.08.666.133.067.211.056.289-.033.078-.09.334-.39.423-.523.089-.133.178-.112.3-.067.122.045.779.367.912.434.133.067.222.1.256.156.033.056.033.323-.111.728zM12 2C6.477 2 2 6.477 2 12c0 1.891.523 3.66 1.434 5.176L2 22l4.957-1.399C8.423 21.492 10.153 22 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/>
         </svg>
     </a>
+    {% endif %}
 
     <!-- ====================================================================
          FOOTER
@@ -760,7 +808,7 @@
     <footer class="app-footer">
         <div class="app-container">
             <div class="footer-inner">
-                <div><span class="footer-brand-note">Suchit Product Catalog Generator</span> &bull; Multimodal AI Engine &bull; v2.3.0</div>
+                <div><span class="footer-brand-note">Product Catalog</span> &bull; Multimodal AI Engine &bull; v2.3.0</div>
                 <div style="display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;">
                     <span data-action="open-security" style="cursor:pointer;color:var(--success);font-weight:600;">🔒 SSL 256-Bit Secured</span>
                     <a href="/export/pdf" download>Catalog PDF</a>
@@ -776,7 +824,7 @@
     <div id="authModal" class="modal-overlay">
         <div class="modal-dialog" style="max-width:440px;">
             <div class="modal-header">
-                <h3 id="authModalTitle">Sign In to Suchit</h3>
+                <h3 id="authModalTitle">Sign In to Product Catalog</h3>
                 <button type="button" class="modal-close-btn" data-close-modal="authModal">&times;</button>
             </div>
             <div class="modal-body">

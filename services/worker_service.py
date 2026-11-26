@@ -1,5 +1,5 @@
 """
-Suchit Catalog - Background Worker Service ("Workers: Background jobs")
+Product Catalog - Background Worker Service ("Workers: Background jobs")
 Consumes asynchronous jobs from Message Queue: dispatches SMTP/sandbox emails,
 runs scheduled database snapshots, and performs housekeeping tasks off the HTTP thread.
 """
@@ -11,7 +11,7 @@ from email.message import EmailMessage
 from config import Config
 from services import queue_service, backup_service
 
-logger = logging.getLogger("suchit.worker")
+logger = logging.getLogger("product_catalog.worker")
 
 _WORKER_THREAD = None
 _STOP_EVENT = threading.Event()
@@ -39,14 +39,14 @@ def _send_email(recipient: str, subject: str, body_text: str, job_id: int = None
                 server.send_message(msg)
 
             queue_service.record_outbox_email(recipient, subject, preview, "smtp_tls", "sent", job_id)
-            logger.info(f"[WORKER] Sent SMTP email to {recipient}: {subject}")
+            logger.info(f"[WORKER] Sent SMTP email job #{job_id}: {subject}")
             return True
         except Exception as exc:
-            logger.error(f"[WORKER] SMTP send error to {recipient}: {exc}")
+            logger.error(f"[WORKER] SMTP send error for job #{job_id}: {exc}")
             raise
 
-    # Local dev / no SMTP password configured: safely record server-side delivery without throwing
-    logger.info(f"[WORKER SANDBOX EMAIL] To={recipient} | Subject={subject} | Preview={preview}")
+    # Local dev / no SMTP password configured: safely record server-side delivery without logging PII
+    logger.info(f"[WORKER SANDBOX EMAIL] job_id={job_id} | Subject={subject}")
     queue_service.record_outbox_email(recipient, subject, preview, "worker_sandbox", "delivered_sandbox", job_id)
     return True
 
@@ -62,14 +62,14 @@ def _execute_job(job: dict):
         code = payload["code"]
         body = (
             f"Hello {username},\n\n"
-            f"Your Suchit Catalog email verification code is: {code}\n"
+            f"Your Product Catalog email verification code is: {code}\n"
             f"This code expires in 15 minutes.\n\n"
-            f"If you did not register on Suchit Catalog, ignore this message.\n"
+            f"If you did not register on Product Catalog, ignore this message.\n"
         )
-        # Never store the raw OTP code in unmasked preview logs accessible in tables
-        safe_preview = f"Verification code dispatched to {recipient} for user '{username}' (valid 15 min)."
-        logger.info(f"[EMAIL WORKER] Verification code for '{username}' ({recipient}): {code}")
-        _send_email(recipient, "Verify Your Suchit Catalog Email", body, job_id=job_id, mask_body_in_outbox=safe_preview)
+        # Never store the raw OTP code or full email body in unmasked preview logs
+        safe_preview = f"Verification email dispatched for job #{job_id} (valid 15 min)."
+        logger.info(f"[EMAIL WORKER] Dispatched verification job #{job_id}")
+        _send_email(recipient, "Verify Your Product Catalog Email", body, job_id=job_id, mask_body_in_outbox=safe_preview)
 
     elif job_type == "email.order_receipt":
         recipient = payload["customer_email"]
@@ -85,7 +85,7 @@ def _execute_job(job: dict):
             f"Support: {Config.DOMAIN_EMAIL}\n"
         )
         safe_preview = f"Order receipt {order_number} ({product_name}, {amount}) sent to {recipient}."
-        _send_email(recipient, f"Suchit Order Receipt #{order_number}", body, job_id=job_id, mask_body_in_outbox=safe_preview)
+        _send_email(recipient, f"Order Receipt #{order_number} - Product Catalog", body, job_id=job_id, mask_body_in_outbox=safe_preview)
 
     elif job_type == "email.contact_ack":
         recipient = payload["email"]
@@ -97,7 +97,7 @@ def _execute_job(job: dict):
         )
         _send_email(
             recipient,
-            f"Inquiry Received [{ref_code}] - Suchit Catalog",
+            f"Inquiry Received [{ref_code}] - Product Catalog",
             body,
             job_id=job_id,
             mask_body_in_outbox=f"Inquiry acknowledgment {ref_code} sent to {recipient}."
@@ -154,5 +154,5 @@ def start_background_worker():
     if _WORKER_THREAD and _WORKER_THREAD.is_alive():
         return
     _STOP_EVENT.clear()
-    _WORKER_THREAD = threading.Thread(target=_worker_loop, name="SuchitJobWorker", daemon=True)
+    _WORKER_THREAD = threading.Thread(target=_worker_loop, name="CatalogJobWorker", daemon=True)
     _WORKER_THREAD.start()

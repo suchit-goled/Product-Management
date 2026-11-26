@@ -1,5 +1,5 @@
 """
-Suchit Catalog - Database Backup & Disaster Recovery Service
+Product Catalog - Database Backup & Disaster Recovery Service
 Provides scheduled and on-demand ACID snapshots using sqlite3.backup,
 path traversal protection, and cache invalidation after restore.
 """
@@ -10,7 +10,7 @@ import logging
 from config import Config
 from services import cache_service, security_service
 
-logger = logging.getLogger("suchit.backup")
+logger = logging.getLogger("product_catalog.backup")
 
 BACKUP_DIR = Config.BACKUP_FOLDER
 os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -21,7 +21,7 @@ def create_backup(label: str = "manual") -> dict:
     os.makedirs(BACKUP_DIR, exist_ok=True)
     safe_label = "".join(c for c in label if c.isalnum() or c in ("_", "-"))[:24] or "manual"
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"suchit_backup_{safe_label}_{timestamp}.db"
+    filename = f"catalog_backup_{safe_label}_{timestamp}.db"
     dest_path = os.path.join(BACKUP_DIR, filename)
 
     try:

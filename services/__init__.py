@@ -1,1 +1,1 @@
-# Suchit Catalog Services package
+# Product Catalog Services package

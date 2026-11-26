@@ -1,10 +1,11 @@
 /**
- * Suchit Catalog - Role-Gated Editor Module (Served ONLY to authenticated Editor & Admin sessions)
+ * Product Catalog - Role-Gated Editor Module (Served ONLY to authenticated Editor & Admin sessions)
  * Handles AI Studio uploads, draft refinement, and catalog CRUD mutations via CSRF-protected BFF routes.
  */
 
 let studioSelectedFile = null;
 let studioCurrentDraft = null;
+let studioMode = "image";
 let pendingDeleteId = null;
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -13,6 +14,9 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function bindEditorControls() {
+    const modeImageBtn = document.getElementById("modeImageBtn");
+    const modePromptBtn = document.getElementById("modePromptBtn");
+    const genPromptBtn = document.getElementById("generateFromPromptBtn");
     const addFeat = document.getElementById("addFeatureRowBtn");
     const addSpec = document.getElementById("addSpecRowBtn");
     const addUsp = document.getElementById("addUspRowBtn");
@@ -23,6 +27,9 @@ function bindEditorControls() {
     const editForm = document.getElementById("productEditForm");
     const confirmDeleteBtn = document.getElementById("confirmExecuteDeleteBtn");
 
+    if (modeImageBtn) modeImageBtn.addEventListener("click", () => switchStudioMode("image"));
+    if (modePromptBtn) modePromptBtn.addEventListener("click", () => switchStudioMode("prompt"));
+    if (genPromptBtn) genPromptBtn.addEventListener("click", runPromptCatalogGeneration);
     if (addFeat) addFeat.addEventListener("click", addFeatureRow);
     if (addSpec) addSpec.addEventListener("click", addSpecRow);
     if (addUsp) addUsp.addEventListener("click", addUspRow);
@@ -39,6 +46,29 @@ function bindEditorControls() {
             rmBtn.parentElement.remove();
         }
     });
+}
+
+function switchStudioMode(mode) {
+    studioMode = mode === "prompt" ? "prompt" : "image";
+    const imgPane = document.getElementById("imageGeneratorPane");
+    const promptPane = document.getElementById("promptGeneratorPane");
+    const modeImageBtn = document.getElementById("modeImageBtn");
+    const modePromptBtn = document.getElementById("modePromptBtn");
+    const reviewWorkspace = document.getElementById("reviewWorkspace");
+
+    if (reviewWorkspace) reviewWorkspace.style.display = "none";
+    if (imgPane) imgPane.style.display = studioMode === "image" ? "block" : "none";
+    if (promptPane) promptPane.style.display = studioMode === "prompt" ? "block" : "none";
+
+    if (modeImageBtn) {
+        modeImageBtn.classList.toggle("btn-primary", studioMode === "image");
+        modeImageBtn.classList.toggle("btn-secondary", studioMode !== "image");
+    }
+    if (modePromptBtn) {
+        modePromptBtn.classList.toggle("btn-primary", studioMode === "prompt");
+        modePromptBtn.classList.toggle("btn-secondary", studioMode !== "prompt");
+    }
+    setWorkflowStep(1);
 }
 
 function initStudioDropzone() {
@@ -107,6 +137,12 @@ function resetStudioUploadState() {
     studioCurrentDraft = null;
     const inp = document.getElementById("catalogImageInput");
     if (inp) inp.value = "";
+    const promptInp = document.getElementById("promptCatalogInput");
+    if (promptInp) promptInp.value = "";
+    ["promptBrandInput", "promptCategoryInput", "promptPriceInput"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
     const ids = {
         uploadDropzone: "block",
         uploadPreviewBox: "none",
@@ -117,7 +153,7 @@ function resetStudioUploadState() {
         const el = document.getElementById(id);
         if (el) el.style.display = disp;
     });
-    setWorkflowStep(1);
+    switchStudioMode(studioMode);
 }
 
 function setWorkflowStep(stepNum) {
@@ -175,15 +211,82 @@ async function runAiCatalogExtraction() {
     }
 }
 
+async function runPromptCatalogGeneration() {
+    const promptText = (document.getElementById("promptCatalogInput")?.value || "").trim();
+    if (promptText.length < 3) {
+        window.showToast("Please describe the product first (at least 3 characters)", "warning");
+        return;
+    }
+
+    const promptPane = document.getElementById("promptGeneratorPane");
+    const progressCard = document.getElementById("aiProgressCard");
+    const reviewWorkspace = document.getElementById("reviewWorkspace");
+    const progressFill = document.getElementById("aiProgressBarFill");
+    const progressStatus = document.getElementById("aiProgressStatus");
+
+    if (promptPane) promptPane.style.display = "none";
+    if (progressCard) progressCard.style.display = "block";
+    if (reviewWorkspace) reviewWorkspace.style.display = "none";
+    if (progressFill) progressFill.style.width = "45%";
+    if (progressStatus) progressStatus.textContent = "Generating structured catalog entry via server AI...";
+    setWorkflowStep(2);
+
+    try {
+        const payload = {
+            prompt: promptText,
+            brand: document.getElementById("promptBrandInput")?.value.trim() || "",
+            category: document.getElementById("promptCategoryInput")?.value.trim() || "",
+            price: document.getElementById("promptPriceInput")?.value.trim() || "",
+            model: document.getElementById("promptModelSelect")?.value || "llama-3.3-70b-versatile",
+            save_immediately: false
+        };
+
+        const res = await window.secureFetch("/gw/studio/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Catalog generation failed");
+
+        if (progressFill) progressFill.style.width = "100%";
+        studioCurrentDraft = data.draft;
+        setWorkflowStep(3);
+
+        setTimeout(() => {
+            if (progressCard) progressCard.style.display = "none";
+            populateReviewWorkspace(data.draft, null);
+            if (reviewWorkspace) reviewWorkspace.style.display = "grid";
+            window.showToast(data.warning ? `Notice: ${data.warning}` : "Catalog draft generated for review", data.warning ? "warning" : "success");
+        }, 250);
+    } catch (err) {
+        if (progressCard) progressCard.style.display = "none";
+        if (promptPane) promptPane.style.display = "block";
+        window.showToast(`Generation error: ${err.message}`, "error");
+    }
+}
+
 function populateReviewWorkspace(draft, imgMeta) {
     const img = document.getElementById("reviewLargeImage");
-    if (img && draft.image_path) img.src = draft.image_path;
     const meta = document.getElementById("reviewMediaMeta");
-    if (meta && imgMeta) {
-        meta.innerHTML = `
-            <div><b>Dimensions:</b> ${imgMeta.width} x ${imgMeta.height} px</div>
-            <div><b>Format:</b> ${window.escapeHtml(imgMeta.format)} &bull; <b>EXIF Stripped:</b> Yes</div>
-        `;
+    if (img) {
+        if (draft.image_path && typeof draft.image_path === "string" && draft.image_path.startsWith("/static/uploads/")) {
+            img.src = draft.image_path;
+            img.style.display = "block";
+        } else {
+            img.removeAttribute("src");
+            img.style.display = "none";
+        }
+    }
+    if (meta) {
+        if (imgMeta) {
+            meta.innerHTML = `
+                <div><b>Dimensions:</b> ${Number(imgMeta.width) || 0} x ${Number(imgMeta.height) || 0} px</div>
+                <div><b>Format:</b> ${window.escapeHtml(imgMeta.format)} &bull; <b>EXIF Stripped:</b> Yes</div>
+            `;
+        } else {
+            meta.innerHTML = `<div><b>Source:</b> Text Brief Catalog Generation</div><div><b>Status:</b> Ready for review &amp; publishing</div>`;
+        }
     }
     document.getElementById("reviewProductName").value = draft.product_name || "";
     document.getElementById("reviewBrand").value = draft.brand || "";

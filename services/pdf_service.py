@@ -1,7 +1,7 @@
 """
-Suchit Catalog - Professional PDF Generation Service
+Product Catalog - Professional PDF Generation Service
 Generates beautifully typeset single-product sheets and multi-product catalog books
-using ReportLab with custom typography, clean tables, images, and Suchit branding.
+using ReportLab with custom typography, clean tables, images, and brand styling.
 """
 import os
 import io
@@ -19,7 +19,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Suchit Brand Color Palette
+# Brand Color Palette
 PRIMARY_COLOR = colors.HexColor("#1e3a8a")     # Deep Indigo / Navy
 SECONDARY_COLOR = colors.HexColor("#2563eb")   # Bright Indigo
 TEXT_DARK = colors.HexColor("#0f172a")         # Slate 900
@@ -56,13 +56,13 @@ class NumberedCanvas(canvas.Canvas):
         self.setStrokeColor(BORDER_COLOR)
         self.setLineWidth(0.5)
         self.line(40, letter[1] - 35, letter[0] - 40, letter[1] - 35)
-        self.drawString(40, letter[1] - 30, "SUCHIT • AI PRODUCT CATALOG")
+        self.drawString(40, letter[1] - 30, "PRODUCT CATALOG")
         date_str = datetime.datetime.now().strftime("%B %d, %Y")
         self.drawRightString(letter[0] - 40, letter[1] - 30, date_str)
 
         # Bottom footer
         self.line(40, 40, letter[0] - 40, 40)
-        self.drawString(40, 28, "Suchit Intelligent Product Catalog Engine • All specifications subject to verification")
+        self.drawString(40, 28, "Product Catalog • All specifications subject to verification")
         page_text = f"Page {self._pageNumber} of {total_pages}"
         self.drawRightString(letter[0] - 40, 28, page_text)
         self.restoreState()
@@ -354,7 +354,7 @@ def generate_catalog_pdf(products: list, base_dir: str = None) -> bytes:
 
     # Cover / Title Page
     story.append(Spacer(1, 40))
-    story.append(Paragraph("SUCHIT", ParagraphStyle(
+    story.append(Paragraph("PRODUCT CATALOG", ParagraphStyle(
         'CoverBrand',
         parent=styles['Title'],
         fontName='Helvetica-Bold',
@@ -363,7 +363,7 @@ def generate_catalog_pdf(products: list, base_dir: str = None) -> bytes:
         textColor=PRIMARY_COLOR,
         alignment=1
     )))
-    story.append(Paragraph("INTELLIGENT PRODUCT CATALOG", ParagraphStyle(
+    story.append(Paragraph("OFFICIAL PRODUCT DIRECTORY", ParagraphStyle(
         'CoverSub',
         parent=styles['Subtitle'],
         fontName='Helvetica-Bold',

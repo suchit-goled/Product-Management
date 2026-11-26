@@ -1,5 +1,5 @@
 """
-Suchit Catalog - Cryptographic Validation & Input Security Service
+Product Catalog - Cryptographic Validation & Input Security Service
 Provides constant-time CSRF verification, Luhn payment card validation,
 authoritative server-side checkout calculation, CSV injection protection,
 password strength enforcement, and canonical path traversal containment.

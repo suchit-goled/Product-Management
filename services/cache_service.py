@@ -1,5 +1,5 @@
 """
-Suchit Catalog - Cache & Stateless Session Layer ("Cache: Hot reads, sessions")
+Product Catalog - Cache & Stateless Session Layer ("Cache: Hot reads, sessions")
 Provides a thread-safe L1 memory cache backed by SQLite persistence so hot catalog
 queries, rate-limiting counters, and opaque server-side sessions remain fast and stateless.
 """
@@ -14,7 +14,7 @@ import threading
 from datetime import datetime, timedelta
 from config import Config
 
-logger = logging.getLogger("suchit.cache")
+logger = logging.getLogger("product_catalog.cache")
 
 _LOCK = threading.RLock()
 _MEMORY_CACHE = {}  # key -> (expires_at_epoch, value)
@@ -210,9 +210,9 @@ def get_server_session(raw_token: str, user_agent: str = ""):
     with _LOCK:
         cached = cache_get(f"sid:{token_hash}")
         if cached and cached.get("expires_at", 0) > now_epoch:
-            # Verify optional User-Agent binding if present on session
+            # Enforce strict User-Agent binding whenever session recorded a UA fingerprint
             stored_ua = cached.get("ua_fingerprint", "")
-            if stored_ua and user_agent and _fingerprint(user_agent) != stored_ua:
+            if stored_ua and _fingerprint(user_agent) != stored_ua:
                 logger.warning("Session User-Agent mismatch rejected")
                 return None
             return cached
@@ -229,7 +229,7 @@ def get_server_session(raw_token: str, user_agent: str = ""):
         if not row or row["revoked"] or row["expires_at"] <= now_epoch:
             return None
 
-        if row["ua_fingerprint"] and user_agent and _fingerprint(user_agent) != row["ua_fingerprint"]:
+        if row["ua_fingerprint"] and _fingerprint(user_agent) != row["ua_fingerprint"]:
             logger.warning("Session User-Agent mismatch rejected from DB check")
             return None
 

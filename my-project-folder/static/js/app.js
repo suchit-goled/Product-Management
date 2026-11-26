@@ -1,10 +1,10 @@
 /**
- * Suchit Catalog - Public & Authenticated Viewer Client Layer
+ * Product Catalog - Public & Authenticated Viewer Client Layer
  * Strictly zero internal admin/editor API endpoints shipped in this bundle.
  * Enforces CSRF token attachment, CSP compliance (no inline handlers), and server-authoritative pricing display.
  */
 
-window.SuchitApp = {
+window.CatalogApp = {
     products: [],
     filteredProducts: [],
     currentView: "grid",
@@ -15,34 +15,6 @@ window.SuchitApp = {
     selectedPaymentMethod: "Credit Card",
     pendingDeleteId: null
 };
-
-// ==============================================================================
-// GOOGLE ANALYTICS 4 (CSP-Safe Dynamic Loader)
-// ==============================================================================
-
-function initAnalytics() {
-    const gaId = (document.body.dataset.gaId || "").trim();
-    if (!gaId) return;
-    window.dataLayer = window.dataLayer || [];
-    window.gtag = function () { window.dataLayer.push(arguments); };
-    window.gtag("js", new Date());
-    window.gtag("config", gaId);
-
-    const script = document.createElement("script");
-    script.async = true;
-    script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gaId)}`;
-    document.head.appendChild(script);
-}
-
-function trackAnalyticsEvent(eventName, params = {}) {
-    if (typeof window.gtag === "function") {
-        try {
-            window.gtag("event", eventName, params);
-        } catch (err) {
-            console.debug("GA4 skip:", err);
-        }
-    }
-}
 
 // ==============================================================================
 // SECURITY HELPERS (CSRF, Escaping, Authenticated Gateway Calls)
@@ -83,16 +55,25 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
+const DEFAULT_PLACEHOLDER_SVG =
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><rect width="400" height="300" fill="#0f172a"/><rect x="20" y="20" width="360" height="260" rx="16" fill="#1e293b" stroke="#334155" stroke-width="2"/><text x="200" y="145" font-family="sans-serif" font-size="18" font-weight="700" fill="#94a3b8" text-anchor="middle">PRODUCT CATALOG</text><text x="200" y="175" font-family="sans-serif" font-size="13" fill="#64748b" text-anchor="middle">Text-Generated Entry</text></svg>'
+    );
+
 function sanitizeImageUrl(url) {
-    if (!url || typeof url !== "string") return "/static/uploads/suchit_asset_3_boat.jpg";
+    if (!url || typeof url !== "string") return "";
     if (url.startsWith("/static/uploads/")) return url;
-    return "/static/uploads/suchit_asset_3_boat.jpg";
+    return "";
 }
 
 function pictureMarkup(imagePath, altText, className = "") {
     const safeJpg = sanitizeImageUrl(imagePath);
-    const webpPath = safeJpg.replace(/\.(png|jpg|jpeg)$/i, ".webp");
     const clsAttr = className ? `class="${escapeHtml(className)}"` : "";
+    if (!safeJpg) {
+        return `<img src="${DEFAULT_PLACEHOLDER_SVG}" ${clsAttr} loading="lazy" alt="${escapeHtml(altText)}">`;
+    }
+    const webpPath = safeJpg.replace(/\.(png|jpg|jpeg)$/i, ".webp");
     return `
         <picture>
             <source srcset="${escapeHtml(webpPath)}" type="image/webp">
@@ -106,12 +87,11 @@ function pictureMarkup(imagePath, altText, className = "") {
 // ==============================================================================
 
 document.addEventListener("DOMContentLoaded", () => {
-    initAnalytics();
     bindStaticControls();
     bindDelegatedHandlers();
     handleUrlParameters();
     loadCatalogData();
-    if (window.SuchitApp.authenticated) {
+    if (window.CatalogApp.authenticated) {
         loadUserOrders();
     }
 });
@@ -226,9 +206,6 @@ function bindStaticControls() {
     if (searchInput) {
         searchInput.addEventListener("input", debounce(() => {
             applyFilters();
-            if (searchInput.value.trim()) {
-                trackAnalyticsEvent("catalog_search", { query: searchInput.value.trim() });
-            }
         }, 250));
     }
     if (catSelect) catSelect.addEventListener("change", applyFilters);
@@ -240,13 +217,13 @@ function bindStaticControls() {
     const tableBtn = document.getElementById("viewTableBtn");
     if (gridBtn && tableBtn) {
         gridBtn.addEventListener("click", () => {
-            window.SuchitApp.currentView = "grid";
+            window.CatalogApp.currentView = "grid";
             gridBtn.classList.add("active");
             tableBtn.classList.remove("active");
             renderCatalog();
         });
         tableBtn.addEventListener("click", () => {
-            window.SuchitApp.currentView = "table";
+            window.CatalogApp.currentView = "table";
             tableBtn.classList.add("active");
             gridBtn.classList.remove("active");
             renderCatalog();
@@ -257,14 +234,12 @@ function bindStaticControls() {
     const checkoutSelect = document.getElementById("checkoutProductSelect");
     const checkoutQty = document.getElementById("checkoutQuantity");
     const checkoutForm = document.getElementById("checkoutForm");
-    const testCardBtn = document.getElementById("fillTestCardBtn");
     const modalCheckoutBtn = document.getElementById("modalCheckoutBtn");
     const printReceiptBtn = document.getElementById("printReceiptBtn");
 
     if (checkoutSelect) checkoutSelect.addEventListener("change", updateCheckoutProductSummary);
     if (checkoutQty) checkoutQty.addEventListener("input", updateCheckoutProductSummary);
     if (checkoutForm) checkoutForm.addEventListener("submit", handleCheckoutSubmit);
-    if (testCardBtn) testCardBtn.addEventListener("click", fillTestCardDetails);
     if (printReceiptBtn) printReceiptBtn.addEventListener("click", () => window.print());
     if (modalCheckoutBtn) {
         modalCheckoutBtn.addEventListener("click", () => {
@@ -277,7 +252,7 @@ function bindStaticControls() {
     document.querySelectorAll("[data-payment-method]").forEach(card => {
         card.addEventListener("click", () => {
             const method = card.getAttribute("data-payment-method");
-            window.SuchitApp.selectedPaymentMethod = method;
+            window.CatalogApp.selectedPaymentMethod = method;
             document.querySelectorAll(".payment-option-card").forEach(c => c.classList.remove("selected"));
             card.classList.add("selected");
             const cf = document.getElementById("cardPaymentFields");
@@ -301,8 +276,8 @@ function bindDelegatedHandlers() {
         if (action === "view") {
             openProductModal(prodId);
         } else if (action === "order") {
-            const prod = window.SuchitApp.products.find(p => p.id === prodId);
-            if (prod) window.SuchitApp.selectedCheckoutProduct = prod;
+            const prod = window.CatalogApp.products.find(p => p.id === prodId);
+            if (prod) window.CatalogApp.selectedCheckoutProduct = prod;
             switchTab("checkoutSection");
         } else if (action === "edit" && typeof window.openEditorModalForId === "function") {
             window.openEditorModalForId(prodId);
@@ -337,7 +312,7 @@ function switchTab(tabId) {
     const sec = document.getElementById(tabId);
     if (!sec) return;
 
-    window.SuchitApp.activeTab = tabId;
+    window.CatalogApp.activeTab = tabId;
     document.querySelectorAll("[data-tab]").forEach(el => {
         el.classList.toggle("active", el.getAttribute("data-tab") === tabId);
     });
@@ -349,7 +324,7 @@ function switchTab(tabId) {
 
     if (tabId === "checkoutSection") {
         populateCheckoutDropdown();
-        if (window.SuchitApp.authenticated) loadUserOrders();
+        if (window.CatalogApp.authenticated) loadUserOrders();
     } else if (tabId === "settingsSection" && typeof window.refreshAdminPanel === "function") {
         window.refreshAdminPanel();
     }
@@ -382,7 +357,7 @@ function toggleAuthForm(formName) {
 
     if (formName === "login") {
         if (loginForm) loginForm.style.display = "block";
-        if (title) title.textContent = "Sign In to Suchit";
+        if (title) title.textContent = "Sign In to Product Catalog";
     } else if (formName === "register") {
         if (regForm) regForm.style.display = "block";
         if (title) title.textContent = "Create Account";
@@ -406,7 +381,6 @@ async function handleLoginSubmit(e) {
         const data = await res.json();
         if (res.ok && data.success) {
             if (data.csrf_token) setCsrfToken(data.csrf_token);
-            trackAnalyticsEvent("user_login", { role: data.user?.role });
             showToast(data.message || "Signed in! Loading authorized workspace...", "success");
             setTimeout(() => window.location.reload(), 450);
         } else {
@@ -414,6 +388,9 @@ async function handleLoginSubmit(e) {
         }
     } catch (err) {
         showToast("Error reaching authentication gateway", "error");
+    } finally {
+        const pw = document.getElementById("loginPassword");
+        if (pw) pw.value = "";
     }
 }
 
@@ -439,6 +416,9 @@ async function handleRegisterSubmit(e) {
         }
     } catch (err) {
         showToast("Registration error", "error");
+    } finally {
+        const pw = document.getElementById("regPassword");
+        if (pw) pw.value = "";
     }
 }
 
@@ -460,6 +440,9 @@ async function handleVerifyEmailSubmit(e) {
         }
     } catch (err) {
         showToast("Verification request error", "error");
+    } finally {
+        const codeEl = document.getElementById("verifyEmailCode");
+        if (codeEl) codeEl.value = "";
     }
 }
 
@@ -474,7 +457,7 @@ async function resendVerificationCode() {
 }
 
 async function confirmLogout() {
-    if (!confirm("Sign out of your Suchit session?")) return;
+    if (!confirm("Sign out of your Product Catalog session?")) return;
     try {
         await secureFetch("/gw/auth/logout", { method: "POST" });
         window.location.href = "/";
@@ -495,8 +478,8 @@ async function loadCatalogData() {
         ]);
 
         if (prodRes.ok) {
-            window.SuchitApp.products = await prodRes.json();
-            window.SuchitApp.filteredProducts = [...window.SuchitApp.products];
+            window.CatalogApp.products = await prodRes.json();
+            window.CatalogApp.filteredProducts = [...window.CatalogApp.products];
         }
 
         if (statsRes.ok) {
@@ -566,7 +549,7 @@ function applyFilters() {
     const brandVal = document.getElementById("brandFilter")?.value || "all";
     const sortVal = document.getElementById("catalogSortSelect")?.value || "newest";
 
-    let result = [...window.SuchitApp.products];
+    let result = [...window.CatalogApp.products];
 
     if (searchVal) {
         result = result.filter(p => {
@@ -591,7 +574,7 @@ function applyFilters() {
         return (b.id || 0) - (a.id || 0);
     });
 
-    window.SuchitApp.filteredProducts = result;
+    window.CatalogApp.filteredProducts = result;
     renderCatalog();
 }
 
@@ -601,7 +584,7 @@ function renderCatalog() {
     const empty = document.getElementById("catalogEmptyState");
     if (!grid || !tableWrap || !empty) return;
 
-    if (window.SuchitApp.filteredProducts.length === 0) {
+    if (window.CatalogApp.filteredProducts.length === 0) {
         grid.style.display = "none";
         tableWrap.style.display = "none";
         empty.style.display = "flex";
@@ -609,19 +592,19 @@ function renderCatalog() {
     }
 
     empty.style.display = "none";
-    if (window.SuchitApp.currentView === "grid") {
+    if (window.CatalogApp.currentView === "grid") {
         grid.style.display = "grid";
         tableWrap.style.display = "none";
-        renderGridView(window.SuchitApp.filteredProducts, grid);
+        renderGridView(window.CatalogApp.filteredProducts, grid);
     } else {
         grid.style.display = "none";
         tableWrap.style.display = "block";
-        renderTableView(window.SuchitApp.filteredProducts, tableWrap);
+        renderTableView(window.CatalogApp.filteredProducts, tableWrap);
     }
 }
 
 function canEditRole() {
-    return window.SuchitApp.role === "admin" || window.SuchitApp.role === "editor";
+    return window.CatalogApp.role === "admin" || window.CatalogApp.role === "editor";
 }
 
 function renderGridView(products, container) {
@@ -728,7 +711,7 @@ async function openProductModal(productId) {
         const res = await secureFetch(`/gw/catalog/item/${productId}`);
         if (!res.ok) throw new Error("Not found");
         const p = await res.json();
-        window.SuchitApp.selectedCheckoutProduct = p;
+        window.CatalogApp.selectedCheckoutProduct = p;
 
         const modal = document.getElementById("productViewModal");
         const body = document.getElementById("productViewModalBody");
@@ -770,7 +753,6 @@ async function openProductModal(productId) {
             </div>
         `;
         if (modal) modal.classList.add("active");
-        trackAnalyticsEvent("view_product_modal", { product_id: p.id });
     } catch (err) {
         showToast("Failed to load product details", "error");
     }
@@ -785,15 +767,15 @@ function populateCheckoutDropdown() {
     if (!select) return;
     select.innerHTML = "";
 
-    window.SuchitApp.products.forEach(p => {
+    window.CatalogApp.products.forEach(p => {
         const opt = document.createElement("option");
         opt.value = p.id;
         opt.textContent = `${p.product_name} (${p.price || "Quote Only"})`;
         select.appendChild(opt);
     });
 
-    if (window.SuchitApp.selectedCheckoutProduct) {
-        select.value = window.SuchitApp.selectedCheckoutProduct.id;
+    if (window.CatalogApp.selectedCheckoutProduct) {
+        select.value = window.CatalogApp.selectedCheckoutProduct.id;
     }
     updateCheckoutProductSummary();
 }
@@ -804,10 +786,10 @@ function updateCheckoutProductSummary() {
     if (!select) return;
 
     const prodId = parseInt(select.value, 10);
-    const prod = window.SuchitApp.products.find(p => p.id === prodId) || window.SuchitApp.products[0];
+    const prod = window.CatalogApp.products.find(p => p.id === prodId) || window.CatalogApp.products[0];
     if (!prod) return;
 
-    window.SuchitApp.selectedCheckoutProduct = prod;
+    window.CatalogApp.selectedCheckoutProduct = prod;
     const qty = Math.max(1, Math.min(50, parseInt(qtyInput?.value || "1", 10) || 1));
 
     const nameEl = document.getElementById("summaryProductName");
@@ -839,25 +821,15 @@ function updateCheckoutProductSummary() {
     }
 }
 
-function fillTestCardDetails() {
-    const num = document.getElementById("checkoutCardNumber");
-    const exp = document.getElementById("checkoutCardExpiry");
-    const cvv = document.getElementById("checkoutCardCvv");
-    if (num) num.value = "4242 4242 4242 4242";
-    if (exp) exp.value = "12/28";
-    if (cvv) cvv.value = "123";
-    showToast("Luhn-valid test card pre-filled", "info");
-}
-
 async function handleCheckoutSubmit(e) {
     e.preventDefault();
-    if (!window.SuchitApp.authenticated) {
+    if (!window.CatalogApp.authenticated) {
         openAuthModal("login");
         showToast("Please sign in to place a verified commercial order", "warning");
         return;
     }
 
-    const prod = window.SuchitApp.selectedCheckoutProduct;
+    const prod = window.CatalogApp.selectedCheckoutProduct;
     if (!prod) {
         showToast("Please select a product", "warning");
         return;
@@ -870,7 +842,7 @@ async function handleCheckoutSubmit(e) {
         customer_name: document.getElementById("checkoutCustomerName").value.trim(),
         customer_email: document.getElementById("checkoutCustomerEmail").value.trim(),
         billing_address: document.getElementById("checkoutAddress").value.trim(),
-        payment_method: window.SuchitApp.selectedPaymentMethod,
+        payment_method: window.CatalogApp.selectedPaymentMethod,
         card_number: document.getElementById("checkoutCardNumber")?.value || "",
         card_expiry: document.getElementById("checkoutCardExpiry")?.value || "",
         card_cvv: document.getElementById("checkoutCardCvv")?.value || ""
@@ -887,7 +859,6 @@ async function handleCheckoutSubmit(e) {
         });
         const data = await res.json();
         if (res.ok && data.success) {
-            trackAnalyticsEvent("purchase", { order_number: data.order_number });
             openOrderConfirmationModal(data);
             showToast(data.message, "success");
             loadUserOrders();
@@ -897,6 +868,11 @@ async function handleCheckoutSubmit(e) {
     } catch (err) {
         showToast("Error communicating with checkout service", "error");
     } finally {
+        // Clear sensitive payment card inputs immediately from browser DOM memory
+        ["checkoutCardNumber", "checkoutCardExpiry", "checkoutCardCvv"].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = "";
+        });
         if (btn) { btn.disabled = false; btn.textContent = "🔒 Complete Verified Payment"; }
     }
 }
@@ -923,7 +899,7 @@ function openOrderConfirmationModal(orderData) {
 
 async function loadUserOrders() {
     const box = document.getElementById("userOrdersHistoryBox");
-    if (!box || !window.SuchitApp.authenticated) return;
+    if (!box || !window.CatalogApp.authenticated) return;
     try {
         const res = await secureFetch("/gw/orders");
         if (!res.ok) return;
@@ -982,7 +958,6 @@ async function handleContactSubmit(e) {
         if (res.ok && data.success) {
             showToast(data.message, "success");
             document.getElementById("contactForm").reset();
-            trackAnalyticsEvent("contact_inquiry_sent", { category: payload.category });
         } else {
             showToast(data.message || "Failed to send inquiry", "error");
         }

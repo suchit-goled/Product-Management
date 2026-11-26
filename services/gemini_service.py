@@ -1,6 +1,6 @@
 """
 Product Catalog - AI Extraction and Multimodal Generation Service
-Integrates with Google GenAI SDK (gemini-2.5-flash, gemini-2.0-flash, etc.)
+Integrates with Google GenAI SDK (gemini-3.8-flash, gemini-3.6-flash, etc.)
 with structured JSON output, OCR text verification, and reliable offline fallbacks.
 """
 import os
@@ -13,9 +13,9 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash"
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite"
 ]
 
 CATALOG_EXTRACTION_PROMPT = """

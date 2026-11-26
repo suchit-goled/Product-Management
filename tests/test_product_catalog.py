@@ -717,6 +717,63 @@ class ProductCatalogSecurityAndArchitectureTests(unittest.TestCase):
             if os.path.exists(webp_disk):
                 os.remove(webp_disk)
 
+    def test_19_favicon_explicit_static_and_serverless_boot(self):
+        """Verify /favicon.ico, explicit static routes, and full cold-start boot under VERCEL=1."""
+        import subprocess
+        import tempfile
+
+        c = self._new_client()
+        fav = c.get('/favicon.ico')
+        self.assertEqual(fav.status_code, 200)
+        self.assertIn("svg", fav.mimetype)
+        self.assertIn("public, max-age=", fav.headers.get("Cache-Control", ""))
+
+        css = c.get('/static/css/style.css')
+        self.assertEqual(css.status_code, 200)
+        css.close()
+
+        app_js = c.get('/static/js/app.js')
+        self.assertEqual(app_js.status_code, 200)
+        app_js.close()
+
+        env = os.environ.copy()
+        env["VERCEL"] = "1"
+        env["VERCEL_URL"] = "product-management-ochre-eight.vercel.app"
+        probe_code = (
+            "import os, tempfile\n"
+            "import app as app_mod\n"
+            "from config import Config\n"
+            "tmp_root = tempfile.gettempdir()\n"
+            "assert Config.IS_SERVERLESS is True\n"
+            "assert Config.TRUST_PROXY is True\n"
+            "assert Config.SESSION_COOKIE_SECURE is True\n"
+            "assert Config.DATABASE.startswith(tmp_root), Config.DATABASE\n"
+            "assert Config.UPLOAD_FOLDER.startswith(tmp_root), Config.UPLOAD_FOLDER\n"
+            "assert Config.BACKUP_FOLDER.startswith(tmp_root), Config.BACKUP_FOLDER\n"
+            "assert 'https://product-management-ochre-eight.vercel.app' in Config.ALLOWED_ORIGINS\n"
+            "client = app_mod.app.test_client()\n"
+            "assert client.get('/').status_code == 200\n"
+            "assert client.get('/favicon.ico').status_code == 200\n"
+            "assert client.get('/healthz').status_code == 200\n"
+            "assert client.get('/static/css/style.css').status_code == 200\n"
+            "img_r = client.get('/static/uploads/product_asset_3_boat.jpg')\n"
+            "assert img_r.status_code == 200\n"
+            "img_r.close()\n"
+            "prods = client.get('/products').get_json()\n"
+            "assert len(prods) >= 10\n"
+            "print('SERVERLESS_BOOT_OK')\n"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", probe_code],
+            cwd=parent_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, f"Serverless boot failed:\nSTDOUT: {proc.stdout}\nSTDERR: {proc.stderr}")
+        self.assertIn("SERVERLESS_BOOT_OK", proc.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

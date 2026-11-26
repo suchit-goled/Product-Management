@@ -5,14 +5,14 @@ Layered Enterprise Architecture:
   -> App Servers (Stateless Auth/RBAC + BFF Gateway + REST Engine)
   -> [Cache (Hot Reads & Opaque Sessions) | Database (WAL Source of Truth) | Message Queue -> Workers]
 """
-import os
 import io
+import os
 import uuid
 import logging
 from functools import wraps
 from urllib.parse import urlparse
 from flask import (
-    Flask, render_template, request, jsonify, send_file, send_from_directory,
+    Flask, Response, render_template, request, jsonify, send_file, send_from_directory,
     redirect, url_for, g, make_response
 )
 from flask_cors import CORS
@@ -54,12 +54,16 @@ CORS(
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
 
-os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(Config.BACKUP_FOLDER, exist_ok=True)
+for _dir in (Config.UPLOAD_FOLDER, Config.BACKUP_FOLDER):
+    try:
+        os.makedirs(_dir, exist_ok=True)
+    except OSError as exc:
+        logger.warning(f"Directory creation skipped for {_dir}: {exc}")
 
-# Initialize Database, Cache/Sessions & Message Queue tables + start Background Worker Pool
+# Initialize Database, Cache/Sessions & Message Queue tables + start Background Worker Pool (non-serverless only)
 database.init_db()
-worker_service.start_background_worker()
+if not Config.IS_SERVERLESS:
+    worker_service.start_background_worker()
 
 
 # ==============================================================================
@@ -185,13 +189,15 @@ def apply_security_and_cdn_headers(response):
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
 
-    if request.is_secure or request.headers.get("X-Forwarded-Proto", "").lower() == "https":
+    if request.is_secure or (Config.TRUST_PROXY and request.headers.get("X-Forwarded-Proto", "").lower() == "https"):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
     # CDN edge cache rules vs Private dynamic endpoints & HTML containing CSRF/session state
     if request.path.startswith("/static/uploads/") and response.status_code == 200:
         response.headers["Cache-Control"] = f"public, max-age={Config.CDN_STATIC_MAX_AGE}, immutable"
         response.headers["Vary"] = "Accept"
+    elif request.path == "/favicon.ico" and response.status_code == 200:
+        response.headers["Cache-Control"] = "public, max-age=86400"
     elif request.path.startswith(("/static/css/", "/static/js/app.js")) and response.status_code == 200:
         response.headers["Cache-Control"] = "public, max-age=3600"
     elif (
@@ -275,24 +281,60 @@ def rate_limit_guard(scope: str, max_requests: int, window_seconds: int):
 # ROLE-SCOPED FRONTEND ASSETS & CDN WEBP NEGOTIATION
 # ==============================================================================
 
+def _resolve_upload_asset(clean_name: str):
+    """Finds an uploaded asset in runtime writable storage first, then bundled static uploads."""
+    for folder in (Config.UPLOAD_FOLDER, Config.BUNDLED_UPLOAD_FOLDER):
+        ok, target = security_service.is_safe_contained_path(folder, clean_name)
+        if ok and os.path.isfile(target):
+            return folder, target
+    return None, None
+
+
+_FAVICON_SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
+    "<rect width='100' height='100' rx='20' fill='#2563eb'/>"
+    "<text x='50%' y='68%' font-size='60' font-weight='800' fill='white' "
+    "text-anchor='middle' font-family='sans-serif'>P</text></svg>"
+)
+
+
+@app.route('/favicon.ico', methods=['GET'])
+def favicon():
+    """Serves brand icon cleanly across serverless/WSGI deployments (prevents 404/500 on browser icon fetch)."""
+    return Response(_FAVICON_SVG, mimetype='image/svg+xml')
+
+
+@app.route('/static/css/<path:filename>')
+def serve_css_bundle(filename):
+    """Explicit stylesheet route for serverless runtimes where Flask auto-static may be bypassed."""
+    clean_name = secure_filename(filename)
+    return send_from_directory(os.path.join(static_folder, "css"), clean_name)
+
+
+@app.route('/static/js/app.js')
+def serve_public_js_bundle():
+    """Explicit public JS bundle route for serverless runtimes."""
+    return send_from_directory(os.path.join(static_folder, "js"), "app.js")
+
+
 @app.route('/static/uploads/<path:filename>')
 def serve_cdn_upload(filename):
     """CDN Edge simulation: negotiates WebP cleanly when Accept: image/webp is sent."""
     clean_name = secure_filename(filename)
-    ok, target = security_service.is_safe_contained_path(Config.UPLOAD_FOLDER, clean_name)
-    if not ok or not os.path.isfile(target):
+    base_folder, target = _resolve_upload_asset(clean_name)
+    if not target:
         return jsonify({"error": "Not Found"}), 404
 
     accept_hdr = request.headers.get("Accept", "")
     if "image/webp" in accept_hdr and not clean_name.lower().endswith(".webp"):
         webp_candidate = f"{os.path.splitext(clean_name)[0]}.webp"
-        ok_w, target_w = security_service.is_safe_contained_path(Config.UPLOAD_FOLDER, webp_candidate)
-        if ok_w and os.path.isfile(target_w):
-            resp = make_response(send_from_directory(Config.UPLOAD_FOLDER, webp_candidate))
+        webp_folder, target_w = _resolve_upload_asset(webp_candidate)
+        if target_w:
+            resp = make_response(send_from_directory(webp_folder, webp_candidate))
             resp.mimetype = "image/webp"
             return resp
 
-    return send_from_directory(Config.UPLOAD_FOLDER, clean_name)
+    return send_from_directory(base_folder, clean_name)
 
 
 @app.route('/static/js/editor.js')
@@ -720,9 +762,9 @@ def upload_image():
             return jsonify({"error": err}), 400
 
         allowed_vision_models = set(groq_service.GROQ_VISION_MODELS) | {
-            "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"
+            "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"
         }
-        default_model = Config.GROQ_VISION_MODEL if groq_service.is_groq_configured() else "gemini-2.5-flash"
+        default_model = Config.GROQ_VISION_MODEL if groq_service.is_groq_configured() else "gemini-3.8-flash"
         selected_model = request.form.get("model") or default_model
         if selected_model not in allowed_vision_models:
             selected_model = default_model
@@ -774,7 +816,7 @@ def generate_catalog_from_prompt():
         price_hint = security_service.sanitize_text_field(data.get("price"), 60)
 
         allowed_text_models = set(groq_service.GROQ_TEXT_MODELS) | {
-            "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"
+            "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"
         }
         default_model = Config.GROQ_TEXT_MODEL
         selected_model = (data.get("model") or default_model).strip()
@@ -1036,7 +1078,7 @@ def admin_diagnostics():
         },
         "gemini": {
             "configured": has_gemini,
-            "model": "gemini-2.5-flash"
+            "model": "gemini-3.8-flash"
         },
         "security": {
             "https_ready": True,

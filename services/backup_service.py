@@ -12,17 +12,23 @@ from services import cache_service, security_service
 
 logger = logging.getLogger("product_catalog.backup")
 
-BACKUP_DIR = Config.BACKUP_FOLDER
-os.makedirs(BACKUP_DIR, exist_ok=True)
+
+def _get_backup_dir() -> str:
+    backup_dir = Config.BACKUP_FOLDER
+    try:
+        os.makedirs(backup_dir, exist_ok=True)
+    except OSError as exc:
+        logger.warning(f"Backup directory unavailable ({backup_dir}): {exc}")
+    return backup_dir
 
 
 def create_backup(label: str = "manual") -> dict:
     """Creates a consistent SQLite online backup snapshot using sqlite3.backup API."""
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    backup_dir = _get_backup_dir()
     safe_label = "".join(c for c in label if c.isalnum() or c in ("_", "-"))[:24] or "manual"
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"catalog_backup_{safe_label}_{timestamp}.db"
-    dest_path = os.path.join(BACKUP_DIR, filename)
+    dest_path = os.path.join(backup_dir, filename)
 
     try:
         source_conn = sqlite3.connect(Config.DATABASE)
@@ -61,12 +67,14 @@ def create_backup(label: str = "manual") -> dict:
 
 def list_backups() -> list:
     """Returns metadata for existing snapshots inside BACKUP_DIR."""
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    backup_dir = _get_backup_dir()
+    if not os.path.isdir(backup_dir):
+        return []
     backups = []
 
-    for fname in sorted(os.listdir(BACKUP_DIR), reverse=True):
+    for fname in sorted(os.listdir(backup_dir), reverse=True):
         if fname.endswith(".db"):
-            ok, fpath = security_service.is_safe_contained_path(BACKUP_DIR, fname)
+            ok, fpath = security_service.is_safe_contained_path(backup_dir, fname)
             if not ok or not os.path.isfile(fpath):
                 continue
             size = os.path.getsize(fpath)
@@ -93,7 +101,8 @@ def list_backups() -> list:
 
 def restore_backup(filename: str) -> dict:
     """Restores DB safely with path containment, pre-restore snapshot, and cache flush."""
-    ok, source_path = security_service.is_safe_contained_path(BACKUP_DIR, filename)
+    backup_dir = _get_backup_dir()
+    ok, source_path = security_service.is_safe_contained_path(backup_dir, filename)
     clean_filename = os.path.basename(filename or "")
 
     if not ok or not clean_filename.endswith(".db") or not os.path.exists(source_path):

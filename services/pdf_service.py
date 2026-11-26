@@ -191,15 +191,18 @@ def _build_product_story(product: dict, styles: dict, base_dir: str = None) -> l
     # Two column overview: Left image (or placeholder), Right quick details
     image_flowable = None
     if img_path:
-        # Resolve path
+        # Resolve path (checking runtime UPLOAD_FOLDER first for serverless/tmp uploads)
+        from config import Config as _Cfg
+        img_basename = os.path.basename(img_path)
         candidate_paths = [
+            os.path.join(_Cfg.UPLOAD_FOLDER, img_basename) if img_basename else "",
             img_path,
             os.path.join(base_dir or "", img_path.lstrip("/")),
             os.path.join(base_dir or "", "static", img_path.replace("/static/", "").lstrip("/")),
             os.path.join(base_dir or "", "my-project-folder", img_path.lstrip("/"))
         ]
         for p in candidate_paths:
-            if os.path.exists(p) and os.path.isfile(p):
+            if p and os.path.exists(p) and os.path.isfile(p):
                 try:
                     image_flowable = RLImage(p, width=2.4*inch, height=2.4*inch, kind='proportional')
                     break
